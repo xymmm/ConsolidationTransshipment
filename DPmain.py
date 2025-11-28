@@ -32,10 +32,11 @@ if __name__ == "__main__":
     inst = Instance(
     N=20, T=2.0,
     lambdaA=8, lambdaB=5,
-    h=0.1, pA=50.0, pB=10.0,
+    h=0.1, pA=10.0, pB=10.0,
     cf=20.0, cu=1.0,
     minIB=-20, maxIB=20, maxbA=10,
-    IB0=20
+    IB0=20,
+    salvage_v=5.0  # <--- ADD THIS LINE. 0.0 = No Salvage, >0.0 = With Salvage
     )
 
 
@@ -50,25 +51,18 @@ if __name__ == "__main__":
     print(f"[Exact] Optimal expected cost at t=0 from (IB0={inst.IB0}, bA0=0): {opt_cost:.4f}")
 
     # === Single trajectory presentation (append-only CSV) ===
-    present_epoch(inst, solution, IB0=inst.IB0, bA0=0, seed=SEED,outfile=EPOCH_OUTFILE, label=RUN_LABEL)
+    # present_epoch(inst, solution, IB0=inst.IB0, bA0=0, seed=SEED,outfile=EPOCH_OUTFILE, label=RUN_LABEL)
 
     # Append N matrices (r = N..1), never overwrite, with blank line separators
-    present_policy(inst, solution, outfile="policy.csv", include_r0=False)
+    # present_policy(inst, solution, outfile="policy.csv", include_r0=False)
 
     # 3D surface of full policy (one PNG)
-    present_surface(inst, solution, outdir="figures", label=RUN_LABEL, dpi=180)
+    # present_surface(inst, solution, outdir="figures", label=RUN_LABEL, dpi=180)
 
     # simulations (append-only CSV with per-run and one summary row)
     simN = 2000
     base_seed = 3260
     mean, std, lo, hi, costs = run_simulations(inst, solution, simN, base_seed, IB0=inst.IB0, bA0=0)
     print(f"[Tally over {simN} sims] mean={mean:.4f}, std={std:.4f}, 95% CI=({lo:.4f}, {hi:.4f})")
-    append_sim_results(SIMS_OUTFILE, RUN_LABEL, base_seed, costs)
+    # append_sim_results(SIMS_OUTFILE, RUN_LABEL, base_seed, costs)
 
-
-    run_full_check( inst, solution,
-        fullclear_csv="fullclear_report.csv",
-        surf_csv="critical_surface.csv",
-        surf_png="critical_surface.png",
-        include_r0=False
-    )

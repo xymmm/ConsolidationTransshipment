@@ -28,6 +28,7 @@ class Instance:
     maxbA: int
     IB0: int = 0  # initial inventory at B (user input)
     tail: float = 0.0  # unused in AMO
+    salvage_v: float = 0.0  # ADDED: Salvage Value (default 0.0 = No Salvage)
 
     def dt(self) -> float:
         return self.T / self.N
@@ -97,28 +98,28 @@ def solveDP_AMO_Bpriority_dynamic(inst: Instance) -> Dict[str, Any]:
     nI, nA = len(IB_vals), len(bA_vals)
 
     # --- MODIFICATION START ---
-    # Instead of initializing V with zeros, we use the analytical form
-    # derived in the PDF (Eq 9) at tau=0 to capture the "Theorem 1" structure.
-    # V_w(I2, b1, 0) = term_I2 + cu*b1 + Cf*(1 if b1>0 else 0)
-
+    # Initialization of Terminal Condition (V at r=0, i.e., t=T)
     V_terminal = np.zeros((nI, nA), dtype=float)
 
+    # Factor for Theorem 1 approximation (Base Terminal Cost)
     factor = (inst.h + inst.pB) / (2 * inst.lambdaB) if inst.lambdaB > 0 else 0
 
     for i, IB in enumerate(IB_vals):
         for j, bA in enumerate(bA_vals):
+            # 1. Calculate Base Terminal Cost (Theorem 1 Proxy)
+            val_proxy = 0.0
             if IB >= 0:
-                # Equation (9) from PDF at tau=0:
-                # V = (h+pi2)/(2*lambda2) * (I2^2 + I2) + cu*b1 + Cf*1_{b1>0}
                 term_I2 = factor * (IB ** 2 + IB)
                 term_b1 = inst.cu * bA
                 term_fixed = inst.cf if bA > 0 else 0.0
-                V_terminal[i, j] = term_I2 + term_b1 + term_fixed
-            else:
-                # Fallback for negative inventory (not explicitly covered in Eq 9 quadratic form)
-                # We use standard linear closing cost or 0.
-                # Using 0 is safe as Theorem 1 focuses on I2 > 0 dispatch region.
-                V_terminal[i, j] = 0.0
+                val_proxy = term_I2 + term_b1 + term_fixed
+
+            # 2. Calculate Salvage Reward (Negative Cost)
+            # If salvage_v=0, this term is 0.
+            val_salvage = inst.salvage_v * max(0, IB)
+
+            # 3. Combine: Cost = Proxy - Reward
+            V_terminal[i, j] = val_proxy - val_salvage
 
     # Initialize V list with this terminal condition at index 0 (which is r=0)
     V = [np.zeros((nI, nA), dtype=float) for _ in range(inst.N + 1)]
@@ -279,22 +280,22 @@ def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: i
 
         IB, bA = IB_next, bA_next
 
-    # 2. CRITICAL FIX: Add Terminal Cost (Salvage/Penalty at end of horizon)
-    # This must match the V[0] initialization logic in your DP solver.
+    # 2. TERMINAL COST LOGIC (Matching DP)
     if inst.lambdaB > 0:
         factor = (inst.h + inst.pB) / (2 * inst.lambdaB)
     else:
         factor = 0.0
 
-    # Apply the quadratic approximation for positive inventory (Theorem 1 logic)
+    # Base Terminal Cost (Theorem 1 Proxy)
+    terminal_cost = 0.0
     if IB >= 0:
         term_I2 = factor * (IB ** 2 + IB)
         term_b1 = inst.cu * bA
         term_fixed = inst.cf if bA > 0 else 0.0
         terminal_cost = term_I2 + term_b1 + term_fixed
-    else:
-        # Fallback for negative inventory (assumed 0 in this context)
-        terminal_cost = 0.0
+
+    # Subtract Salvage Value (if salvage_v > 0, this reduces cost)
+    terminal_cost -= inst.salvage_v * max(0, IB)
 
     total_cost += terminal_cost
 
@@ -323,7 +324,7 @@ def run_simulations(inst: Instance, solution, simN: int, base_seed: int, IB0: in
 
 
 # -------------------------
-# Persist simulation results (append-only)
+# Persist simulation results (refresh-only)
 # -------------------------
 def append_sim_results(outfile: str, label: str, base_seed: int, costs: np.ndarray):
     """
@@ -332,7 +333,7 @@ def append_sim_results(outfile: str, label: str, base_seed: int, costs: np.ndarr
         label, kind, run_idx, seed, cost, mean, std, ci_low, ci_high
     """
     file_exists = os.path.exists(outfile)
-    with open(outfile, "a", newline="", encoding="utf-8") as f:
+    with open(outfile, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         if not file_exists:
             w.writerow(["label", "kind", "run_idx", "seed", "cost", "mean", "std", "ci_low", "ci_high"])
