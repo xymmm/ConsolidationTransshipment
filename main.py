@@ -1,4 +1,5 @@
 from TransshipmentInstance import TransshipmentInstance
+from TransshipmentSimulator import TransshipmentSimulator
 from TransshipmentSolver import TransshipmentSolver
 
 
@@ -19,9 +20,29 @@ def main():
     solver = TransshipmentSolver(inst)
     solver.solve()
 
+    # Get MDP Expected Cost at t=0 for the specific starting state
+    start_i_idx = inst.I2_0 - inst.i_min
+    start_b_idx = inst.b1_0
+    mdp_cost = solver.V_tables[0][start_i_idx, start_b_idx]
+
     # 3. Generate CSVs
     solver.save_policy_to_csv(time_idx=0, filename="optimal_policy_matrix_t0.csv")
     solver.save_thresholds_to_csv(filename="threshold_evolution.csv")
+
+    print("\n--- 3. Validate with Continuous-Time Simulation ---")
+    sim = TransshipmentSimulator(inst, solver)
+    sim_mean, sim_ci = sim.run_monte_carlo(num_simulations=2000)
+
+    print(f"[Sim Result] Mean Cost: {sim_mean:.4f} +/- {sim_ci:.4f}")
+
+    # Validation Check
+    error_pct = abs(mdp_cost - sim_mean) / mdp_cost * 100
+    print(f"Discrepancy: {error_pct:.2f}%")
+    if error_pct < 1.0:
+        print(">> VALIDATION SUCCESSFUL (Gap < 1%)")
+    else:
+        print(">> GAP > 1%. (Expected due to Discrete vs Continuous time approximation)")
+
 
     # 4. Generate Graphs
     print("\n--- Plotting Switching Curve (2D) ---")
