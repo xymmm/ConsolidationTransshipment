@@ -138,9 +138,7 @@ class TransshipmentSolver:
     # ==========================
     def plot_switching_curve(self, time_idx=0):
         """
-        Generates Switching Curve with specific nodes for 'Wait' states (q=0).
-        X-axis: Backlog (b1)
-        Y-axis: Inventory (I2)
+        Generates Switching Curve with explicit GREY DOTS for Wait Zones.
         """
         if not self.Policy_tables:
             print("Error: Model not solved.")
@@ -153,35 +151,36 @@ class TransshipmentSolver:
         real_I2 = np.arange(self.inst.i_min, self.inst.i_max + 1)
         real_b1 = np.arange(0, self.inst.b_max + 1)
 
-        # Arrays for lines
+        # Arrays for plotting lines
         x_b1 = []
         y_switch_I2 = []
         y_full_I2 = []
 
-        # Arrays for Scatter Points (Wait Nodes)
+        # Arrays for plotting Wait Nodes (Grey Dots)
         wait_x = []
         wait_y = []
 
         for j, b1_val in enumerate(real_b1):
             q_col = policy[:, j]
 
-            # --- 1. Identify Wait Nodes (q=0) ---
-            # We look for indices where q == 0 AND state is within plot limits (I2 >= 0)
+            # --- 1. CAPTURE ALL WAIT NODES ---
+            # Find every index in this column where q == 0
             wait_indices = np.where(q_col == 0)[0]
             for idx in wait_indices:
                 i2_val = real_I2[idx]
-                if i2_val >= 0:  # Only plot non-negative I2 as requested
+                # Only plot dots within the requested view (non-negative I2)
+                if i2_val >= 0:
                     wait_x.append(b1_val)
                     wait_y.append(i2_val)
 
-            # --- 2. Switching Boundary (q > 0) ---
+            # --- 2. SWITCHING BOUNDARY (q > 0) ---
             shipping_indices = np.where(q_col > 0)[0]
             if shipping_indices.size > 0:
                 y_switch_I2.append(real_I2[shipping_indices[0]])
             else:
                 y_switch_I2.append(np.nan)
 
-            # --- 3. Full Satisfaction (q == b1) ---
+            # --- 3. FULL SATISFACTION (q == b1) ---
             full_sat_indices = np.where(q_col == b1_val)[0]
             if full_sat_indices.size > 0:
                 y_full_I2.append(real_I2[full_sat_indices[0]])
@@ -193,10 +192,11 @@ class TransshipmentSolver:
         # Plotting
         plt.figure(figsize=(10, 6))
 
-        # A. Plot Wait Nodes (The background grid)
-        plt.scatter(wait_x, wait_y, color='lightgray', marker='.', s=30, label='Wait ($q=0$)')
+        # A. Plot the Grey Dots (Background Grid)
+        # This fills the "empty" areas
+        plt.scatter(wait_x, wait_y, color='lightgray', marker='.', s=50, label='Wait ($q=0$)')
 
-        # B. Plot Lines
+        # B. Plot the Lines
         plt.plot(x_b1, y_switch_I2, 'o-', color='navy', linewidth=2, label='Start Shipping ($q>0$)')
         plt.plot(x_b1, y_full_I2, 's--', color='green', linewidth=2, label='Clear Backlog ($q=b_1$)')
 
@@ -207,11 +207,12 @@ class TransshipmentSolver:
             y_sw = np.array(y_switch_I2)[valid_mask]
             y_fl = np.array(y_full_I2)[valid_mask]
 
-            # Rationing Region
+            # Rationing Region (Orange)
             plt.fill_between(x_arr, y_sw, y_fl, color='orange', alpha=0.2, label='Rationing Region')
 
-            # Wait Region (Red tint over the gray dots)
-            plt.fill_between(x_arr, 0, y_sw, color='red', alpha=0.05)
+            # Wait Region (Red Tint)
+            # We explicitly fill from 0 up to the blue line
+            plt.fill_between(x_arr, 0, y_sw, color='red', alpha=0.1, label='Wait Region')
 
         plt.xlabel('Retailer 1 Backlog ($b_1$)')
         plt.ylabel('Retailer 2 Inventory ($I_2$)')
