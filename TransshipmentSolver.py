@@ -31,8 +31,13 @@ class TransshipmentSolver:
     def solve(self):
         start_t = time.time()
 
-        # Terminal Condition
-        V_next = -self.inst.c2 * self.I2_grid.astype(float)
+        # Terminal Condition (Using generalized formula)
+        # V_T = -c2 * I2 + pi_end * b1
+        # If c2=0 and pi_end=0, this results in 0 (Model 1)
+        term_inv = -self.inst.c2 * self.I2_grid.astype(float)
+        term_back = self.inst.pi_end * self.b1_grid.astype(float)
+
+        V_next = term_inv + term_back
 
         V_list = [V_next.copy()]
         Policy_list = [np.zeros_like(self.I2_grid, dtype=int)]
@@ -139,6 +144,8 @@ class TransshipmentSolver:
     def plot_switching_curve(self, time_idx=0):
         """
         Generates Switching Curve with explicit GREY DOTS for Wait Zones.
+        X-axis: Backlog (b1)
+        Y-axis: Inventory (I2)
         """
         if not self.Policy_tables:
             print("Error: Model not solved.")
@@ -176,6 +183,7 @@ class TransshipmentSolver:
             # --- 2. SWITCHING BOUNDARY (q > 0) ---
             shipping_indices = np.where(q_col > 0)[0]
             if shipping_indices.size > 0:
+                # Minimum Inventory to start shipping
                 y_switch_I2.append(real_I2[shipping_indices[0]])
             else:
                 y_switch_I2.append(np.nan)
@@ -193,7 +201,6 @@ class TransshipmentSolver:
         plt.figure(figsize=(10, 6))
 
         # A. Plot the Grey Dots (Background Grid)
-        # This fills the "empty" areas
         plt.scatter(wait_x, wait_y, color='lightgray', marker='.', s=50, label='Wait ($q=0$)')
 
         # B. Plot the Lines
@@ -210,9 +217,8 @@ class TransshipmentSolver:
             # Rationing Region (Orange)
             plt.fill_between(x_arr, y_sw, y_fl, color='orange', alpha=0.2, label='Rationing Region')
 
-            # Wait Region (Red Tint)
-            # We explicitly fill from 0 up to the blue line
-            plt.fill_between(x_arr, 0, y_sw, color='red', alpha=0.1, label='Wait Region')
+            # Wait Region (Red Tint) - Fill from 0 up to Switching Line
+            # plt.fill_between(x_arr, 0, y_sw, color='red', alpha=0.1, label='Wait Region')
 
         plt.xlabel('Retailer 1 Backlog ($b_1$)')
         plt.ylabel('Retailer 2 Inventory ($I_2$)')
@@ -225,9 +231,6 @@ class TransshipmentSolver:
         plt.legend(loc='upper left')
         plt.grid(True, alpha=0.3)
         plt.show()
-
-
-
 
     def plot_3d_policy_surface(self, time_idx=0):
         """

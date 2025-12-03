@@ -8,12 +8,12 @@ from TransshipmentSolver import TransshipmentSolver
 def main():
     # 1. Setup Instance
     inst = TransshipmentInstance(
-        T=1.0, N=300,
+        T=2.0, N=300,
         lambda_1=8.0, lambda_2=5.0,
         h=0.1, pi_1=10.0, pi_2=10.0,
-        Cf=20.0, cu=1,
-        c2=0.0,
-        i_min=-10, i_max=20, b_max=20
+        Cf=50.0, cu=1,
+        c2=50.0, pi_end=100,
+        i_min=-50, i_max=50, b_max=20
     )
 
     # 2. Solve
@@ -61,7 +61,7 @@ def main():
     print("\n--- Plotting Switching Curve at t=290 ---")
     solver.plot_switching_curve(time_idx=290)
 
-
+    solver.plot_3d_policy_surface(time_idx=0)
 
 
 if __name__ == "__main__":
