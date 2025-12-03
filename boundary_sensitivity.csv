@@ -1,0 +1,6 @@
+case_name,c2,pi_end,early_ship_mean,late_ship_mean,laziness_index,last_dispatch_time
+case1_no_salvage,0.0,0.0,0.4647,0.0,0.4647,242
+case2_w_salv_weakP,50.0,20.0,0.0,0.0,0.0,-1
+case3_w_salv_midP,50.0,50.0,0.0,0.0,0.0,221
+case4_w_salv_highP,50.0,100.0,0.0043,0.22990000000000005,-0.22560000000000005,299
+case5_w_salv_vHigh,50.0,200.0,0.0328,0.252,-0.2192,299
