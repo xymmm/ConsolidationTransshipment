@@ -133,7 +133,7 @@ def main():
         lambda_1=8.0, lambda_2=5.0,
         h=0.1, pi_1=10.0, pi_2=10.0,
         Cf=50.0, cu=1.0,
-        i_min=-50, i_max=50, b_max=20
+        i_min=-10, i_max=50, b_max=20
     )
 
     print("--- 2. Solving Three Cases ---")
