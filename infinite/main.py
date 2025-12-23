@@ -27,15 +27,15 @@ def main():
 
         for I2 in range(I2_max + 1):
             for b1 in range(b1_max + 1):
-                # Calculate Waiting Value [cite: 86]
+                # Calculate Waiting Value
                 v_wait = solver.get_waiting_value(I2, b1, tau)
 
-                # Default to waiting if no inventory or no backorders [cite: 14]
+                # Default to waiting if no inventory or no backorders
                 if I2 <= 0 or b1 <= 0:
                     writer.writerow([I2, b1, tau, v_wait, "WAIT", 0, v_wait])
                     continue
 
-                # Determine optimal dispatch quantity q* [cite: 100, 111]
+                # Determine optimal dispatch quantity q*
                 q_star = solver.get_optimal_q(I2, b1, tau)
 
                 # Calculate Dispatch Value
@@ -43,7 +43,7 @@ def main():
                 v_dispatch = (inst.Cf + inst.cu * q_star +
                               solver.get_waiting_value(I2 - q_star, b1 - q_star, tau))
 
-                # Decision Rule: Transship if V_d < V_w [cite: 131]
+                # Decision Rule: Transship if V_d < V_w
                 if v_dispatch < v_wait:
                     action = "DISPATCH"
                     v_final = v_dispatch
