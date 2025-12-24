@@ -35,7 +35,7 @@ class InfiniteSolver:
 
                 V_w = self.get_waiting_value(I2, b1, tau)
                 q_star = self.get_optimal_q(I2, b1, tau)
-                # Dispatch value formula [cite: 100, 108]
+                # Dispatch value formula
                 V_d = self.inst.Cf + self.inst.cu * q_star + self.get_waiting_value(I2 - q_star, b1 - q_star, tau)
 
                 if V_d < V_w:  #

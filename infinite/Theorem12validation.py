@@ -125,15 +125,14 @@ def experiment_tau_independence():
 
 def experiment_theorem_1():
     print("\n=== Experiment 2: Verifying Theorem 1 (Case 4.1) ===")
-    # [cite_start]Case 4.1 Condition: (l2 * cu) / (h + pi) <= 0.5 [cite: 133]
-    # Parameters: h=1, pi=10 -> h+pi=11. l2=2, cu=1 -> l2*cu=2. Ratio = 2/11 = 0.18 <= 0.5. Holds.
-    inst = TransshipmentInstance(l1=2, l2=2, h=1, pi1=10, pi2=10,
+    # Case 4.1 Condition: (l2 * cu) / (h + pi) <= 0.5
+    inst = TransshipmentInstance(l1=8, l2=5, h=1, pi1=10, pi2=10,
                                  Cf=20, cu=1, c1=5, c2=5, v2=2, T=10)
     solver = InfiniteSolver(inst)
 
     tau = 5.0
     # Wide range to catch thresholds
-    I2_range = range(0, 20)
+    I2_range = range(-50, 50)
     b1_range = range(0, 20)
     policy = solver.solve_policy(I2_range, b1_range, tau)
 
@@ -151,7 +150,7 @@ def experiment_theorem_1():
     if q_check:
         print("CHECK 1 PASSED: q* = min(I2, b1) for all dispatch states.")
 
-    # 2. Check Threshold I2_bar (Eq 172)
+    # 2. Check Threshold I2_bar
     # This applies when b1 >= I2 + 1. We look for the I2 where behavior switches from WAIT to DISPATCH.
     theo_I2_bar = calc_theoretical_I2_bar(inst)
     print(f"Theoretical I2_bar: {theo_I2_bar:.4f}")
@@ -182,15 +181,14 @@ def experiment_theorem_1():
 
 def experiment_theorem_2():
     print("\n=== Experiment 3: Verifying Theorem 2 (Case 4.2) ===")
-    # [cite_start]Case 4.2 Condition: (l2 * cu) / (h + pi) > 0.5 [cite: 174]
+    # Case 4.2 Condition: (l2 * cu) / (h + pi) > 0.5
     # Parameters: Need high cu or low pi.
-    # Let h=1, pi=2 (h+pi=3). l2=2. Need 2*cu/3 > 0.5 -> cu > 0.75. Let cu=2. Ratio = 4/3 = 1.33.
-    inst = TransshipmentInstance(l1=2, l2=2, h=1, pi1=2, pi2=2,
-                                 Cf=20, cu=2, c1=5, c2=5, v2=2, T=10)
+    inst = TransshipmentInstance(l1=8, l2=5, h=1, pi1=2, pi2=2,
+                                 Cf=20, cu=1, c1=5, c2=5, v2=2, T=10)
     solver = InfiniteSolver(inst)
 
     tau = 5.0
-    policy = solver.solve_policy(range(0, 20), range(0, 20), tau)
+    policy = solver.solve_policy(range(-50, 50), range(0, 20), tau)
 
     # Save results to CSV
     csv_filename = "policy_exp3_theorem2.csv"
@@ -230,6 +228,6 @@ def experiment_theorem_2():
 
 
 if __name__ == "__main__":
-    experiment_tau_independence()
-    # experiment_theorem_1()
-    # experiment_theorem_2()
+    # experiment_tau_independence()
+    experiment_theorem_1()
+    experiment_theorem_2()
