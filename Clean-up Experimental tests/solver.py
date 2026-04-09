@@ -12,14 +12,24 @@ Model (Section 3 of the paper):
       p₂ = λ₂ Δt   → (I₂−1, b₁)       Retailer 2 demand (served / backlogged)
       p₀ = 1−p₁−p₂ → (I₂, b₁)         no arrival
 
-  One-period cost:
-      g(I₂,b₁,q) = Cf·𝟙{q>0} + cᵤ·q + Δt·(h·I₂⁺ + π₁·b₁ + π₂·I₂⁻)
+  One-period cost  [BUG FIX: flow cost uses POST-dispatch state]:
+      g(I₂, b₁, q) = Cf·𝟙{q>0} + cᵤ·q
+                    + Δt·( h·(I₂−q)⁺ + π₁·(b₁−q) + π₂·(I₂−q)⁻ )
+
+      Dispatch happens at the start of the period.  The period's flow cost
+      (holding + backorder) accrues on the POST-dispatch inventory (I₂−q)
+      and backlog (b₁−q).  Using the PRE-dispatch state would overcharge
+      by Δt·(h + π₁)·q per unit dispatched, making dispatch appear more
+      expensive than it is and shifting all DP thresholds upward.
 
   Terminal (clean-up):
-      V⁰(I₂,b₁) = c₁·b₁ + c₂·I₂⁻ − v₂·I₂⁺
+      V⁰(I₂, b₁) = c₁·b₁ + c₂·I₂⁻ − v₂·I₂⁺
 
   Bellman (n = 1,…,N):
-      V^n(I₂,b₁) = min_q { g(I₂,b₁,q) + Σ pᵢ V^{n-1}(post-action-post-transition) }
+      V^n(I₂,b₁) = min_q { g(I₂,b₁,q)
+                           + p₀·V^{n-1}(I₂−q,   b₁−q  )
+                           + p₁·V^{n-1}(I₂−q,   b₁−q+1)
+                           + p₂·V^{n-1}(I₂−q−1, b₁−q  ) }
 
 Outputs:
   - policy[n, I₂, b₁]  →  q*          full policy tensor
@@ -67,9 +77,9 @@ class Params:
     v2:   float = 1.0       # salvage value per unit of I₂>0
 
     # --- State-space bounds ---
-    I2_max: int = 25
-    I2_min: int = -15
-    b1_max: int = 30
+    I2_max: int = 35
+    I2_min: int = -10
+    b1_max: int = 45
 
     # --- Derived quantities ---
     @property
@@ -85,7 +95,7 @@ class Params:
     def p0(self):  return 1.0 - self.p1 - self.p2
 
     def validate(self):
-        assert self.p0 >= 0,    f"Δt too large: p0={self.p0:.4f}<0. Increase N."
+        assert self.p0 >= 0,       f"Δt too large: p0={self.p0:.4f}<0. Increase N."
         assert self.v2 <= self.c2, f"v2={self.v2} > c2={self.c2}, violates model assumption."
         assert self.N >= 1
         return True
@@ -116,13 +126,13 @@ class TransshipmentDP:
         self.p.validate()
 
         # Dimensions
-        self._nI2 = self.p.I2_max - self.p.I2_min + 1   # number of I₂ levels
-        self._nb1 = self.p.b1_max + 1                     # number of b₁ levels
+        self._nI2 = self.p.I2_max - self.p.I2_min + 1
+        self._nb1 = self.p.b1_max + 1
 
         # Storage
-        self.policy = np.zeros((self.p.N + 1, self._nI2, self._nb1), dtype=np.int16)
-        self.V_final = None      # V at n=N (always stored)
-        self.V_all   = None      # V at all n (optional)
+        self.policy  = np.zeros((self.p.N + 1, self._nI2, self._nb1), dtype=np.int16)
+        self.V_final = None
+        self.V_all   = None
 
         self._solved = False
 
@@ -144,12 +154,26 @@ class TransshipmentDP:
     # ── cost functions ───────────────────────────────────────────
     def terminal(self, I2: int, b1: int) -> float:
         """V⁰(I₂, b₁) = c₁·b₁ + c₂·(−I₂)⁺ − v₂·I₂⁺"""
-        return self.p.c1 * b1 + self.p.c2 * max(0, -I2) - self.p.v2 * max(0, I2)
+        return (  self.p.c1 * b1
+                + self.p.c2 * max(0, -I2)
+                - self.p.v2 * max(0,  I2) )
 
     def g(self, I2: int, b1: int, q: int) -> float:
-        """One-period cost g(I₂, b₁, q)."""
+        """
+        One-period cost g(I₂, b₁, q).
+
+        Flow cost is computed on the POST-dispatch state (I₂−q, b₁−q).
+        Dispatch happens at the start of the period; the period's holding
+        and backorder charges accrue on the inventory that remains after
+        the dispatch, not on the pre-dispatch inventory.
+        """
+        I2a = I2 - q        # post-dispatch inventory level
+        b1a = b1 - q        # post-dispatch backlog
+
         cost = self.p.cu * q + self.p.dt * (
-            self.p.h * max(0, I2) + self.p.pi1 * b1 + self.p.pi2 * max(0, -I2)
+            self.p.h   * max(0,  I2a) +
+            self.p.pi1 * b1a          +
+            self.p.pi2 * max(0, -I2a)
         )
         if q > 0:
             cost += self.p.Cf
@@ -163,8 +187,7 @@ class TransshipmentDP:
         Parameters
         ----------
         store_V : bool
-            If True, keep V_all[n, ii, jj] for every period (memory-heavy
-            for large N and state space, but needed for time-threshold analysis).
+            If True, keep V_all[n, ii, jj] for every period.
         verbose : bool
             Print progress every 50 periods.
 
@@ -188,7 +211,7 @@ class TransshipmentDP:
             self.V_all[0] = V.copy()
 
         # ── backward induction: n = 1, …, N ──
-        t0 = _time.time()
+        t0    = _time.time()
         V_new = np.zeros_like(V)
 
         for n in range(1, p.N + 1):
@@ -204,10 +227,10 @@ class TransshipmentDP:
                     best_q    = 0
 
                     for q in range(0, q_max + 1):
-                        I2a = I2 - q       # post-action inventory
-                        b1a = b1 - q       # post-action backlog
+                        I2a = I2 - q        # post-dispatch inventory
+                        b1a = b1 - q        # post-dispatch backlog
 
-                        # Immediate cost
+                        # Immediate cost (post-dispatch flow cost)
                         cost_q = self.g(I2, b1, q)
 
                         # Expected future cost: three transitions from (I2a, b1a)
@@ -247,7 +270,9 @@ class TransshipmentDP:
     def get_policy(self, n: int, I2: int, b1: int) -> int:
         """Return q*(n, I₂, b₁) with automatic clipping."""
         assert self._solved, "Call solve() first."
-        return int(self.policy[n, self._ii(self._clip_I2(I2)), self._clip_b1(b1)])
+        return int(self.policy[n,
+                               self._ii(self._clip_I2(I2)),
+                               self._clip_b1(b1)])
 
     def get_value(self, n: int, I2: int, b1: int) -> float:
         """Return V^n(I₂, b₁)."""
@@ -259,8 +284,10 @@ class TransshipmentDP:
         elif n == self.p.N:
             return float(self.V_final[ii, jj])
         else:
-            raise ValueError("V_all not stored.  Re-solve with store_V=True "
-                             "to access intermediate periods.")
+            raise ValueError(
+                "V_all not stored.  Re-solve with store_V=True "
+                "to access intermediate periods."
+            )
 
     def get_safety_stock(self, n: int, I2: int, b1: int) -> int:
         """Retained inventory after dispatch: I₂ − q*."""
@@ -271,7 +298,7 @@ class TransshipmentDP:
 #  Quick self-test
 # ═══════════════════════════════════════════════════════════════════════
 if __name__ == '__main__':
-    p = Params(N=100, Cf=20, pi1=10, pi2=10, c1=5, c2=5, v2=1)
+    p = Params(N=200, Cf=20, pi1=10, pi2=10, c1=10, c2=10, v2=1)
     dp = TransshipmentDP(p)
     dp.solve(store_V=True)
 
