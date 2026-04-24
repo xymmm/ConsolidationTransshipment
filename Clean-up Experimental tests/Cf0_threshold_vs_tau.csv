@@ -1,0 +1,641 @@
+cu,alpha,alpha_ceil,tau,dp_threshold,dispatch_occurs,diff_dp_minus_analytical,note
+0.5,0.2143,1,0.05,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+0.5,0.2143,1,0.0747,2,yes,1,"within integer rounding (|diff|=1, OK)"
+0.5,0.2143,1,0.0994,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.1241,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.1487,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.1734,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.1981,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.2228,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.2475,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.2722,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.2968,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.3215,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.3462,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.3709,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.3956,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.4203,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.4449,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.4696,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.4943,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.519,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.5437,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.5684,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.593,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.6177,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.6424,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.6671,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.6918,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.7165,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.7411,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.7658,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.7905,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.8152,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.8399,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.8646,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.8892,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.9139,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.9386,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.9633,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,0.988,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.0127,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.0373,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.062,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.0867,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.1114,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.1361,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.1608,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.1854,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.2101,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.2348,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.2595,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.2842,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.3089,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.3335,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.3582,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.3829,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.4076,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.4323,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.457,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.4816,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.5063,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.531,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.5557,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.5804,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.6051,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.6297,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.6544,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.6791,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.7038,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.7285,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.7532,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.7778,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.8025,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.8272,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.8519,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.8766,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.9013,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.9259,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.9506,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,1.9753,1,yes,0,matches analytical prediction exactly
+0.5,0.2143,1,2.0,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.05,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.0,0.4286,1,0.0747,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.0,0.4286,1,0.0994,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.0,0.4286,1,0.1241,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.0,0.4286,1,0.1487,2,yes,1,"within integer rounding (|diff|=1, OK)"
+1.0,0.4286,1,0.1734,2,yes,1,"within integer rounding (|diff|=1, OK)"
+1.0,0.4286,1,0.1981,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.2228,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.2475,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.2722,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.2968,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.3215,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.3462,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.3709,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.3956,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.4203,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.4449,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.4696,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.4943,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.519,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.5437,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.5684,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.593,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.6177,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.6424,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.6671,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.6918,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.7165,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.7411,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.7658,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.7905,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.8152,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.8399,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.8646,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.8892,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.9139,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.9386,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.9633,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,0.988,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.0127,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.0373,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.062,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.0867,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.1114,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.1361,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.1608,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.1854,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.2101,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.2348,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.2595,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.2842,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.3089,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.3335,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.3582,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.3829,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.4076,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.4323,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.457,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.4816,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.5063,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.531,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.5557,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.5804,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.6051,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.6297,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.6544,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.6791,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.7038,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.7285,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.7532,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.7778,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.8025,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.8272,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.8519,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.8766,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.9013,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.9259,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.9506,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,1.9753,1,yes,0,matches analytical prediction exactly
+1.0,0.4286,1,2.0,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.05,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.5,0.6429,1,0.0747,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.5,0.6429,1,0.0994,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.5,0.6429,1,0.1241,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.5,0.6429,1,0.1487,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.5,0.6429,1,0.1734,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.5,0.6429,1,0.1981,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+1.5,0.6429,1,0.2228,3,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+1.5,0.6429,1,0.2475,2,yes,1,"within integer rounding (|diff|=1, OK)"
+1.5,0.6429,1,0.2722,2,yes,1,"within integer rounding (|diff|=1, OK)"
+1.5,0.6429,1,0.2968,2,yes,1,"within integer rounding (|diff|=1, OK)"
+1.5,0.6429,1,0.3215,2,yes,1,"within integer rounding (|diff|=1, OK)"
+1.5,0.6429,1,0.3462,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.3709,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.3956,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.4203,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.4449,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.4696,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.4943,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.519,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.5437,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.5684,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.593,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.6177,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.6424,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.6671,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.6918,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.7165,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.7411,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.7658,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.7905,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.8152,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.8399,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.8646,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.8892,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.9139,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.9386,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.9633,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,0.988,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.0127,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.0373,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.062,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.0867,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.1114,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.1361,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.1608,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.1854,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.2101,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.2348,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.2595,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.2842,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.3089,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.3335,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.3582,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.3829,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.4076,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.4323,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.457,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.4816,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.5063,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.531,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.5557,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.5804,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.6051,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.6297,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.6544,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.6791,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.7038,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.7285,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.7532,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.7778,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.8025,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.8272,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.8519,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.8766,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.9013,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.9259,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.9506,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,1.9753,1,yes,0,matches analytical prediction exactly
+1.5,0.6429,1,2.0,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.05,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.0747,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.0994,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.1241,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.1487,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.1734,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.1981,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.2228,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.2475,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.2722,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+2.0,0.8571,1,0.2968,3,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+2.0,0.8571,1,0.3215,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.3462,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.3709,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.3956,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.4203,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.4449,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.4696,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.4943,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.519,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.5437,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.5684,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.593,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.6177,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.6424,2,yes,1,"within integer rounding (|diff|=1, OK)"
+2.0,0.8571,1,0.6671,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.6918,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.7165,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.7411,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.7658,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.7905,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.8152,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.8399,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.8646,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.8892,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.9139,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.9386,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.9633,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,0.988,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.0127,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.0373,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.062,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.0867,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.1114,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.1361,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.1608,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.1854,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.2101,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.2348,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.2595,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.2842,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.3089,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.3335,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.3582,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.3829,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.4076,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.4323,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.457,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.4816,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.5063,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.531,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.5557,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.5804,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.6051,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.6297,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.6544,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.6791,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.7038,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.7285,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.7532,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.7778,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.8025,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.8272,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.8519,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.8766,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.9013,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.9259,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.9506,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,1.9753,1,yes,0,matches analytical prediction exactly
+2.0,0.8571,1,2.0,1,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.05,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.0747,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.0994,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.1241,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.1487,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.1734,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.1981,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.2228,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.2475,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.2722,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.2968,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.3215,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.3462,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.3709,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.3956,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.4203,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+3.0,1.2857,2,0.4449,4,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+3.0,1.2857,2,0.4696,3,yes,1,"within integer rounding (|diff|=1, OK)"
+3.0,1.2857,2,0.4943,3,yes,1,"within integer rounding (|diff|=1, OK)"
+3.0,1.2857,2,0.519,3,yes,1,"within integer rounding (|diff|=1, OK)"
+3.0,1.2857,2,0.5437,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.5684,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.593,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.6177,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.6424,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.6671,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.6918,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.7165,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.7411,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.7658,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.7905,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.8152,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.8399,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.8646,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.8892,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.9139,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.9386,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.9633,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,0.988,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.0127,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.0373,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.062,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.0867,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.1114,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.1361,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.1608,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.1854,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.2101,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.2348,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.2595,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.2842,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.3089,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.3335,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.3582,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.3829,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.4076,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.4323,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.457,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.4816,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.5063,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.531,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.5557,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.5804,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.6051,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.6297,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.6544,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.6791,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.7038,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.7285,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.7532,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.7778,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.8025,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.8272,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.8519,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.8766,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.9013,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.9259,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.9506,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,1.9753,2,yes,0,matches analytical prediction exactly
+3.0,1.2857,2,2.0,2,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,0.05,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.0747,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.0994,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.1241,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.1487,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.1734,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.1981,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.2228,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.2475,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.2722,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.2968,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.3215,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.3462,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.3709,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.3956,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.4203,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.4449,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.4696,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.4943,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.519,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.5437,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.5684,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.593,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.6177,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.6424,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.6671,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.6918,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+5.0,2.1429,3,0.7165,7,yes,4,DP threshold 4 unit(s) above analytical: finite-horizon transient term raises effective threshold
+5.0,2.1429,3,0.7411,5,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+5.0,2.1429,3,0.7658,4,yes,1,"within integer rounding (|diff|=1, OK)"
+5.0,2.1429,3,0.7905,4,yes,1,"within integer rounding (|diff|=1, OK)"
+5.0,2.1429,3,0.8152,4,yes,1,"within integer rounding (|diff|=1, OK)"
+5.0,2.1429,3,0.8399,4,yes,1,"within integer rounding (|diff|=1, OK)"
+5.0,2.1429,3,0.8646,4,yes,1,"within integer rounding (|diff|=1, OK)"
+5.0,2.1429,3,0.8892,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,0.9139,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,0.9386,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,0.9633,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,0.988,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.0127,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.0373,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.062,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.0867,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.1114,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.1361,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.1608,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.1854,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.2101,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.2348,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.2595,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.2842,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.3089,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.3335,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.3582,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.3829,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.4076,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.4323,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.457,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.4816,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.5063,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.531,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.5557,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.5804,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.6051,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.6297,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.6544,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.6791,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.7038,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.7285,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.7532,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.7778,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.8025,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.8272,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.8519,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.8766,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.9013,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.9259,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.9506,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,1.9753,3,yes,0,matches analytical prediction exactly
+5.0,2.1429,3,2.0,3,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,0.05,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.0747,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.0994,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.1241,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.1487,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.1734,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.1981,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.2228,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.2475,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.2722,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.2968,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.3215,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.3462,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.3709,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.3956,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.4203,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.4449,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.4696,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.4943,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.519,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.5437,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.5684,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.593,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.6177,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.6424,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.6671,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.6918,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.7165,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.7411,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.7658,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.7905,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.8152,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.8399,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.8646,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.8892,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.9139,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.9386,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.9633,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,0.988,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,1.0127,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,1.0373,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,1.062,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,1.0867,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,1.1114,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,1.1361,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+8.0,3.4286,4,1.1608,7,yes,3,DP threshold 3 unit(s) above analytical: finite-horizon transient term raises effective threshold
+8.0,3.4286,4,1.1854,6,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+8.0,3.4286,4,1.2101,6,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+8.0,3.4286,4,1.2348,6,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+8.0,3.4286,4,1.2595,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.2842,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.3089,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.3335,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.3582,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.3829,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.4076,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.4323,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.457,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.4816,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.5063,5,yes,1,"within integer rounding (|diff|=1, OK)"
+8.0,3.4286,4,1.531,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.5557,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.5804,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.6051,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.6297,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.6544,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.6791,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.7038,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.7285,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.7532,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.7778,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.8025,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.8272,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.8519,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.8766,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.9013,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.9259,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.9506,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,1.9753,4,yes,0,matches analytical prediction exactly
+8.0,3.4286,4,2.0,4,yes,0,matches analytical prediction exactly
+12.0,5.1429,6,0.05,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.0747,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.0994,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.1241,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.1487,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.1734,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.1981,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.2228,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.2475,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.2722,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.2968,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.3215,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.3462,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.3709,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.3956,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.4203,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.4449,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.4696,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.4943,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.519,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.5437,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.5684,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.593,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.6177,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.6424,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.6671,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.6918,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.7165,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.7411,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.7658,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.7905,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.8152,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.8399,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.8646,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.8892,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.9139,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.9386,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.9633,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,0.988,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.0127,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.0373,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.062,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.0867,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.1114,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.1361,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.1608,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.1854,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.2101,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.2348,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.2595,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.2842,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.3089,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.3335,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.3582,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.3829,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.4076,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.4323,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.457,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.4816,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.5063,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.531,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.5557,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.5804,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.6051,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.6297,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.6544,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.6791,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.7038,,no,,"threshold exceeds I2_max: finite-horizon transient effect, DP too conservative to dispatch at this tau"
+12.0,5.1429,6,1.7285,10,yes,4,DP threshold 4 unit(s) above analytical: finite-horizon transient term raises effective threshold
+12.0,5.1429,6,1.7532,9,yes,3,DP threshold 3 unit(s) above analytical: finite-horizon transient term raises effective threshold
+12.0,5.1429,6,1.7778,8,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+12.0,5.1429,6,1.8025,8,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+12.0,5.1429,6,1.8272,8,yes,2,DP threshold 2 unit(s) above analytical: finite-horizon transient term raises effective threshold
+12.0,5.1429,6,1.8519,7,yes,1,"within integer rounding (|diff|=1, OK)"
+12.0,5.1429,6,1.8766,7,yes,1,"within integer rounding (|diff|=1, OK)"
+12.0,5.1429,6,1.9013,7,yes,1,"within integer rounding (|diff|=1, OK)"
+12.0,5.1429,6,1.9259,7,yes,1,"within integer rounding (|diff|=1, OK)"
+12.0,5.1429,6,1.9506,7,yes,1,"within integer rounding (|diff|=1, OK)"
+12.0,5.1429,6,1.9753,7,yes,1,"within integer rounding (|diff|=1, OK)"
+12.0,5.1429,6,2.0,7,yes,1,"within integer rounding (|diff|=1, OK)"
