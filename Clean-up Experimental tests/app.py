@@ -250,7 +250,7 @@ else:
         if show_analytical:
             an_clean = [v if v is not None else np.nan for v in ys_an]
             ax.plot(xs, an_clean, color='steelblue', lw=1.2,
-                    ls='--', alpha=0.7, label="Analytical (corrected)")
+                    ls='--', alpha=0.7, label="Analytical")
         if Cf == 0 and show_analytical and x_choice == "τ (remaining time)":
             cf0_vals = [an_I2bar_Cf0(float(x)) for x in xs]
             ax.plot(xs, cf0_vals, 'k:', lw=1.5, alpha=0.6,
