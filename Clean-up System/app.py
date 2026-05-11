@@ -6,13 +6,14 @@ Run with:
 
 Requires solver.py in the same directory.
 Install dependencies:
-    pip install streamlit matplotlib numpy
+    pip install streamlit matplotlib numpy plotly
 """
 
 import math
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import plotly.graph_objects as go
 import streamlit as st
 from solver import Params, TransshipmentDP
 
@@ -42,11 +43,11 @@ with st.sidebar.expander("📈  Demand rates", expanded=True):
     lam2 = st.slider("λ₂ (Retailer 2 rate)", 0.5, 10.0, 3.0, 0.5)
 
 with st.sidebar.expander("💰  Cost parameters", expanded=True):
-    h   = st.slider("h  (holding cost)",     0.0, 5.0,  1.0, 0.1)
+    h   = st.slider("h  (holding cost)",     0.1, 5.0,  1.0, 0.1)
     Cf  = st.slider("Cf (fixed ship cost)",  0.0, 30.0, 8.0, 0.5)
-    cu  = st.slider("cu (unit ship cost)",   0.0, 15.0, 1.0, 0.1)
-    pi1 = st.slider("π₁ (R1 penalty)",       0.0, 20.0, 6.0, 0.5)
-    pi2 = st.slider("π₂ (R2 penalty)",       0.0, 20.0, 6.0, 0.5)
+    cu  = st.slider("cu (unit ship cost)",   0.1, 15.0, 1.0, 0.1)
+    pi1 = st.slider("π₁ (R1 penalty)",       0.5, 20.0, 6.0, 0.5)
+    pi2 = st.slider("π₂ (R2 penalty)",       0.5, 20.0, 6.0, 0.5)
 
 with st.sidebar.expander("🏁  Terminal costs", expanded=False):
     c1 = st.slider("c₁ (clear R1 backlog)", 0.0, 20.0, 6.0, 0.5)
@@ -72,9 +73,8 @@ gamma  = lam2 * (pi1 - pi2) / (h + pi2)
 beta   = round(alpha2 - 0.5)
 gamT   = gamma * T
 
-# classify region
 def classify(a2, gT):
-    if abs(gamma) < 1e-9:   # pi1 == pi2
+    if abs(gamma) < 1e-9:
         return "A1" if a2 <= 0.5 else "A2"
     elif gamma > 0:
         if a2 <= 0.5:
@@ -119,14 +119,14 @@ def an_b1star(I2, tau):
 def an_I2bar(tau):
     xi = 1 - 2*alpha2 + 2*gamma*tau
     if phi2 == 0:
-        return lam2*cu/(h+pi2) - gamma*tau  # Cf=0 formula
+        return lam2*cu/(h+pi2) - gamma*tau
     return 0.5*(_sqrt(xi**2 + 4*phi2) - xi)
 
 def an_I2bar_Cf0(tau):
     return lam2*cu/(h+pi2) - gamma*tau
 
 # ======================================================================
-# SESSION STATE: store solved DP
+# SESSION STATE
 # ======================================================================
 if "dp" not in st.session_state:
     st.session_state.dp = None
@@ -142,7 +142,7 @@ if solve_btn:
             I2_max=I2_max, I2_min=I2_min, b1_max=b1_max,
         )
         dp = TransshipmentDP(p)
-        dp.solve(store_V=False, verbose=False)
+        dp.solve(store_V=True, verbose=False)  # store_V=True needed for V^n queries
         st.session_state.dp = dp
         st.session_state.dp_params = dict(
             T=T, N=N, lam1=lam1, lam2=lam2,
@@ -154,177 +154,293 @@ if solve_btn:
 
 dp = st.session_state.dp
 
-# ======================================================================
-# PLOT CONTROLS
-# ======================================================================
-st.subheader("Plot settings")
-
-pc1, pc2, pc3 = st.columns(3)
-with pc1:
-    x_choice = st.selectbox(
-        "X axis",
-        ["τ (remaining time)", "I₂ (inventory)", "b₁ (backlog)"],
-    )
-with pc2:
-    y_choice = st.selectbox(
-        "Y axis",
-        ["q* (optimal dispatch quantity)",
-         "b₁* threshold (Case 1)",
-         "Ī₂ threshold (Case 2)",
-         "V^n (value function)"],
-    )
-with pc3:
-    show_analytical = st.checkbox("Overlay analytical formula", value=True)
-
-# fixed-dimension sliders — use solved dp bounds if available, else sidebar
-_T      = int(dp.p.T)      if dp is not None else int(T)
-_T_f    = float(dp.p.T)    if dp is not None else float(T)
-_I2_max = dp.p.I2_max      if dp is not None else I2_max
-_I2_min = dp.p.I2_min      if dp is not None else I2_min
-_b1_max = dp.p.b1_max      if dp is not None else b1_max
-
-pc4, pc5 = st.columns(2)
-with pc4:
-    if x_choice != "τ (remaining time)":
-        tau_fixed = st.slider("Fixed τ", 0.05, _T_f, _T_f, 0.05)
-    else:
-        tau_fixed = _T_f
-    if x_choice != "I₂ (inventory)":
-        I2_fixed = st.slider("Fixed I₂", 1, _I2_max, min(10, _I2_max))
-    else:
-        I2_fixed = min(10, _I2_max)
-with pc5:
-    if x_choice != "b₁ (backlog)":
-        b1_fixed = st.slider("Fixed b₁", 1, _b1_max, min(5, _b1_max))
-    else:
-        b1_fixed = min(5, _b1_max)
-    n_lines = st.slider("Number of curves (vary the fixed dimension)", 1, 8, 3)
-
-# ======================================================================
-# PLOT
-# ======================================================================
-
 def n_for_tau(tau, dp):
     dt = dp.p.T / dp.p.N
     return min(dp.p.N, max(1, round(tau / dt)))
 
-if dp is None:
-    st.info("👈  Set parameters and press **Solve DP** to generate plots.")
-else:
-    fig, ax = plt.subplots(figsize=(10, 5.5))
-    colours = cm.tab10(np.linspace(0, 0.9, n_lines))
-    p = dp.p
+# ======================================================================
+# TABS:  2D PLOTS  /  3D PLOTS
+# ======================================================================
+tab_2d, tab_3d = st.tabs(["📈 2D Plots", "🧊 3D Plots"])
 
-    # ── build x-axis values ──────────────────────────────────────────
-    if x_choice == "τ (remaining time)":
-        xs = np.linspace(0.05, p.T, 100)
-        xlabel = "τ (remaining time)"
-    elif x_choice == "I₂ (inventory)":
-        xs = np.arange(1, p.I2_max + 1)
-        xlabel = "I₂ (Retailer 2 inventory)"
-    else:
-        xs = np.arange(1, p.b1_max + 1)
-        xlabel = "b₁ (Retailer 1 backlog)"
+# ======================================================================
+# TAB 1: 2D PLOTS  (existing logic)
+# ======================================================================
+with tab_2d:
+    st.subheader("Plot settings")
 
-    # ── for Ī₂ threshold: single curve (no vary dimension needed) ──────
-    # ── for other y choices: multiple curves varying one dimension ────
-    is_I2bar = (y_choice == "Ī₂ threshold (Case 2)")
+    pc1, pc2, pc3 = st.columns(3)
+    with pc1:
+        x_choice = st.selectbox(
+            "X axis",
+            ["τ (remaining time)", "I₂ (inventory)", "b₁ (backlog)"],
+            key="x2d",
+        )
+    with pc2:
+        y_choice = st.selectbox(
+            "Y axis",
+            ["q* (optimal dispatch quantity)",
+             "b₁* threshold (Case 1)",
+             "Ī₂ threshold (Case 2)",
+             "V^n (value function)"],
+            key="y2d",
+        )
+    with pc3:
+        show_analytical = st.checkbox("Overlay analytical formula", value=True, key="oa2d")
 
-    if is_I2bar:
-        # single DP line + single analytical line
-        ys_dp, ys_an = [], []
-        for x in xs:
-            tau_q = float(x) if x_choice == "τ (remaining time)" else tau_fixed
-            I2_q  = int(x)   if x_choice == "I₂ (inventory)"     else I2_fixed
-            b1_q  = b1_fixed
-            n     = n_for_tau(tau_q, dp)
-            b1_q  = max(0, min(p.b1_max, b1_q))
-            th = None
-            for I2t in range(1, p.I2_max + 1):
-                if dp.get_policy(n, I2t, b1_q) > 0:
-                    th = I2t; break
-            ys_dp.append(th if th is not None else np.nan)
-            ys_an.append(an_I2bar(tau_q))
+    # fixed-dimension sliders
+    _T_f    = float(dp.p.T)    if dp is not None else float(T)
+    _I2_max = dp.p.I2_max      if dp is not None else I2_max
+    _I2_min = dp.p.I2_min      if dp is not None else I2_min
+    _b1_max = dp.p.b1_max      if dp is not None else b1_max
 
-        ax.plot(xs, ys_dp, color='steelblue', lw=2, label="DP")
-        if show_analytical:
-            an_clean = [v if v is not None else np.nan for v in ys_an]
-            ax.plot(xs, an_clean, color='steelblue', lw=1.2,
-                    ls='--', alpha=0.7, label="Analytical")
-        if Cf == 0 and show_analytical and x_choice == "τ (remaining time)":
-            cf0_vals = [an_I2bar_Cf0(float(x)) for x in xs]
-            ax.plot(xs, cf0_vals, 'k:', lw=1.5, alpha=0.6,
-                    label="Cf=0 formula: α₂−γτ")
-
-    else:
-        # multiple curves — vary one dimension
-        if x_choice == "τ (remaining time)":
-            vary_vals = np.linspace(1, p.I2_max, n_lines).astype(int)
-            vary_label = "I₂"
-        elif x_choice == "I₂ (inventory)":
-            vary_vals = np.round(np.linspace(0.1*p.T, p.T, n_lines), 2)
-            vary_label = "τ"
+    pc4, pc5 = st.columns(2)
+    with pc4:
+        if x_choice != "τ (remaining time)":
+            tau_fixed = st.slider("Fixed τ", 0.05, _T_f, _T_f, 0.05, key="tau2d")
         else:
-            vary_vals = np.linspace(1, p.I2_max, n_lines).astype(int)
-            vary_label = "I₂"
+            tau_fixed = _T_f
+        if x_choice != "I₂ (inventory)":
+            I2_fixed = st.slider("Fixed I₂", 1, _I2_max, min(10, _I2_max), key="i22d")
+        else:
+            I2_fixed = min(10, _I2_max)
+    with pc5:
+        if x_choice != "b₁ (backlog)":
+            b1_fixed = st.slider("Fixed b₁", 1, _b1_max, min(5, _b1_max), key="b12d")
+        else:
+            b1_fixed = min(5, _b1_max)
+        n_lines = st.slider("Number of curves", 1, 8, 3, key="nl2d")
 
-        for vv, col in zip(vary_vals, colours):
+    # plot
+    if dp is None:
+        st.info("👈  Set parameters and press **Solve DP** to generate plots.")
+    else:
+        fig, ax = plt.subplots(figsize=(10, 5.5))
+        colours = cm.tab10(np.linspace(0, 0.9, n_lines))
+        p = dp.p
+
+        if x_choice == "τ (remaining time)":
+            xs = np.linspace(0.05, p.T, 100); xlabel = "τ (remaining time)"
+        elif x_choice == "I₂ (inventory)":
+            xs = np.arange(1, p.I2_max + 1);  xlabel = "I₂ (Retailer 2 inventory)"
+        else:
+            xs = np.arange(1, p.b1_max + 1);  xlabel = "b₁ (Retailer 1 backlog)"
+
+        is_I2bar = (y_choice == "Ī₂ threshold (Case 2)")
+
+        if is_I2bar:
             ys_dp, ys_an = [], []
             for x in xs:
-                if x_choice == "τ (remaining time)":
-                    tau_q = float(x); I2_q = int(vv);    b1_q = b1_fixed
-                elif x_choice == "I₂ (inventory)":
-                    tau_q = float(vv); I2_q = int(x);    b1_q = b1_fixed
+                tau_q = float(x) if x_choice == "τ (remaining time)" else tau_fixed
+                I2_q  = int(x)   if x_choice == "I₂ (inventory)"     else I2_fixed
+                b1_q  = max(0, min(p.b1_max, b1_fixed))
+                n     = n_for_tau(tau_q, dp)
+                th = None
+                for I2t in range(1, p.I2_max + 1):
+                    if dp.get_policy(n, I2t, b1_q) > 0:
+                        th = I2t; break
+                ys_dp.append(th if th is not None else np.nan)
+                ys_an.append(an_I2bar(tau_q))
+
+            ax.plot(xs, ys_dp, color='steelblue', lw=2, label="DP")
+            if show_analytical:
+                an_clean = [v if v is not None else np.nan for v in ys_an]
+                ax.plot(xs, an_clean, color='steelblue', lw=1.2,
+                        ls='--', alpha=0.7, label="Analytical (corrected)")
+            if Cf == 0 and show_analytical and x_choice == "τ (remaining time)":
+                cf0_vals = [an_I2bar_Cf0(float(x)) for x in xs]
+                ax.plot(xs, cf0_vals, 'k:', lw=1.5, alpha=0.6,
+                        label="Cf=0 formula: α₂−γτ")
+
+        else:
+            if x_choice == "τ (remaining time)":
+                vary_vals = np.linspace(1, p.I2_max, n_lines).astype(int)
+                vary_label = "I₂"
+            elif x_choice == "I₂ (inventory)":
+                vary_vals = np.round(np.linspace(0.1*p.T, p.T, n_lines), 2)
+                vary_label = "τ"
+            else:
+                vary_vals = np.linspace(1, p.I2_max, n_lines).astype(int)
+                vary_label = "I₂"
+
+            for vv, col in zip(vary_vals, colours):
+                ys_dp, ys_an = [], []
+                for x in xs:
+                    if x_choice == "τ (remaining time)":
+                        tau_q = float(x); I2_q = int(vv);   b1_q = b1_fixed
+                    elif x_choice == "I₂ (inventory)":
+                        tau_q = float(vv); I2_q = int(x);   b1_q = b1_fixed
+                    else:
+                        tau_q = tau_fixed; I2_q = I2_fixed; b1_q = int(x)
+
+                    n    = n_for_tau(tau_q, dp)
+                    I2_q = max(p.I2_min, min(p.I2_max, I2_q))
+                    b1_q = max(0, min(p.b1_max, b1_q))
+
+                    if y_choice == "q* (optimal dispatch quantity)":
+                        ys_dp.append(dp.get_policy(n, I2_q, b1_q))
+                        ys_an.append(None)
+                    elif y_choice == "b₁* threshold (Case 1)":
+                        th = None
+                        for b1t in range(1, min(I2_q, p.b1_max)+1):
+                            if dp.get_policy(n, I2_q, b1t) > 0:
+                                th = b1t; break
+                        ys_dp.append(th if th is not None else np.nan)
+                        ys_an.append(an_b1star(I2_q, tau_q))
+                    else:
+                        try:
+                            ys_dp.append(dp.get_value(n, I2_q, b1_q))
+                        except Exception:
+                            ys_dp.append(np.nan)
+                        ys_an.append(None)
+
+                lbl = f"{vary_label}={vv}"
+                ax.plot(xs, ys_dp, color=col, lw=2, label=f"DP  {lbl}")
+                if show_analytical and any(v is not None for v in ys_an):
+                    an_clean = [v if v is not None else np.nan for v in ys_an]
+                    ax.plot(xs, an_clean, color=col, lw=1.2,
+                            ls='--', alpha=0.7, label=f"Analytical  {lbl}")
+
+        ax.set_xlabel(xlabel, fontsize=12)
+        ax.set_ylabel(y_choice, fontsize=11)
+
+        if x_choice == "τ (remaining time)":
+            ax.invert_xaxis()
+            ax.set_xlabel("τ  ←  end of horizon", fontsize=11)
+
+        title_params = (f"λ₂={lam2}, cu={cu}, h={h}, Cf={Cf}, "
+                        f"π₁={pi1}, π₂={pi2}, T={T}")
+        ax.set_title(f"{y_choice}  vs  {xlabel}\n{title_params}", fontsize=10)
+        ax.legend(fontsize=8, loc='best', framealpha=0.85)
+        ax.grid(True, alpha=0.3)
+
+        st.pyplot(fig)
+        plt.close(fig)
+
+        with st.expander("Parameters used in current solve"):
+            st.json(st.session_state.dp_params)
+
+
+# ======================================================================
+# TAB 2: 3D PLOTS  (Plotly surface)
+# ======================================================================
+with tab_3d:
+    st.subheader("3D surface settings")
+    st.caption("Drag to rotate · scroll to zoom · hover to read values")
+
+    if dp is None:
+        st.info("👈  Set parameters and press **Solve DP** to generate plots.")
+    else:
+        p = dp.p
+        _T_f3   = float(p.T)
+        _I2_max3 = p.I2_max
+        _b1_max3 = p.b1_max
+
+        c1_, c2_, c3_ = st.columns(3)
+        with c1_:
+            z_choice = st.selectbox(
+                "Z axis (surface height)",
+                ["q* (optimal dispatch quantity)",
+                 "V^n (value function)"],
+                key="z3d",
+            )
+        with c2_:
+            xy_choice = st.selectbox(
+                "X-Y plane",
+                ["I₂ × b₁  (fixed τ)",
+                 "I₂ × τ   (fixed b₁)",
+                 "b₁ × τ   (fixed I₂)"],
+                key="xy3d",
+            )
+        with c3_:
+            colorscale = st.selectbox(
+                "Colour scheme",
+                ["Viridis", "Plasma", "RdBu", "Blues", "Cividis"],
+                key="cs3d",
+            )
+
+        # fixed slider for the third dimension
+        if "fixed τ" in xy_choice:
+            tau_fixed3 = st.slider("Fixed τ", 0.05, _T_f3, _T_f3, 0.05, key="tau3d")
+            I2_fixed3, b1_fixed3 = None, None
+        elif "fixed b₁" in xy_choice:
+            b1_fixed3 = st.slider("Fixed b₁", 0, _b1_max3, min(5, _b1_max3), key="b13d")
+            tau_fixed3, I2_fixed3 = None, None
+        else:  # fixed I₂
+            I2_fixed3 = st.slider("Fixed I₂", 1, _I2_max3, min(10, _I2_max3), key="i23d")
+            tau_fixed3, b1_fixed3 = None, None
+
+        # build grid
+        if "I₂ × b₁" in xy_choice:
+            xs = np.arange(0, _I2_max3 + 1)
+            ys = np.arange(0, _b1_max3 + 1)
+            x_label, y_label = "I₂", "b₁"
+        elif "I₂ × τ" in xy_choice:
+            xs = np.arange(0, _I2_max3 + 1)
+            ys = np.linspace(0.05, _T_f3, 30)
+            x_label, y_label = "I₂", "τ"
+        else:
+            xs = np.arange(0, _b1_max3 + 1)
+            ys = np.linspace(0.05, _T_f3, 30)
+            x_label, y_label = "b₁", "τ"
+
+        # compute Z
+        Z = np.zeros((len(ys), len(xs)))
+        for i, yv in enumerate(ys):
+            for j, xv in enumerate(xs):
+                if "I₂ × b₁" in xy_choice:
+                    I2_q, b1_q, tau_q = int(xv), int(yv), tau_fixed3
+                elif "I₂ × τ" in xy_choice:
+                    I2_q, b1_q, tau_q = int(xv), b1_fixed3, float(yv)
                 else:
-                    tau_q = tau_fixed; I2_q = I2_fixed;  b1_q = int(x)
+                    I2_q, b1_q, tau_q = I2_fixed3, int(xv), float(yv)
 
                 n    = n_for_tau(tau_q, dp)
                 I2_q = max(p.I2_min, min(p.I2_max, I2_q))
                 b1_q = max(0, min(p.b1_max, b1_q))
 
-                if y_choice == "q* (optimal dispatch quantity)":
-                    ys_dp.append(dp.get_policy(n, I2_q, b1_q))
-                    ys_an.append(None)
-
-                elif y_choice == "b₁* threshold (Case 1)":
-                    th = None
-                    for b1t in range(1, min(I2_q, p.b1_max)+1):
-                        if dp.get_policy(n, I2_q, b1t) > 0:
-                            th = b1t; break
-                    ys_dp.append(th if th is not None else np.nan)
-                    ys_an.append(an_b1star(I2_q, tau_q))
-
-                else:  # value function
+                if z_choice.startswith("q*"):
+                    Z[i, j] = dp.get_policy(n, I2_q, b1_q)
+                else:
                     try:
-                        ys_dp.append(dp.get_value(n, I2_q, b1_q))
+                        Z[i, j] = dp.get_value(n, I2_q, b1_q)
                     except Exception:
-                        ys_dp.append(np.nan)
-                    ys_an.append(None)
+                        Z[i, j] = np.nan
 
-            lbl = f"{vary_label}={vv}"
-            ax.plot(xs, ys_dp, color=col, lw=2, label=f"DP  {lbl}")
-            if show_analytical and any(v is not None for v in ys_an):
-                an_clean = [v if v is not None else np.nan for v in ys_an]
-                ax.plot(xs, an_clean, color=col, lw=1.2,
-                        ls='--', alpha=0.7, label=f"Analytical  {lbl}")
+        # plot
+        fig = go.Figure(data=[go.Surface(
+            x=xs, y=ys, z=Z,
+            colorscale=colorscale,
+            colorbar=dict(title=z_choice.split()[0]),
+            hovertemplate=f"{x_label}: %{{x}}<br>{y_label}: %{{y}}<br>"
+                          f"{z_choice.split()[0]}: %{{z:.3f}}<extra></extra>",
+        )])
 
-    ax.set_xlabel(xlabel, fontsize=12)
-    ax.set_ylabel(y_choice, fontsize=11)
+        fig.update_layout(
+            scene=dict(
+                xaxis_title=x_label,
+                yaxis_title=y_label,
+                zaxis_title=z_choice.split()[0],
+                aspectmode='cube',
+            ),
+            height=650,
+            margin=dict(l=0, r=0, t=30, b=0),
+            title=dict(
+                text=f"{z_choice}  over  {xy_choice}<br>"
+                     f"<sub>λ₂={lam2}, cu={cu}, h={h}, Cf={Cf}, "
+                     f"π₁={pi1}, π₂={pi2}, T={T}</sub>",
+                x=0.5,
+            ),
+        )
 
-    # invert x for tau plots
-    if x_choice == "τ (remaining time)":
-        ax.invert_xaxis()
-        ax.set_xlabel("τ  ←  end of horizon", fontsize=11)
+        st.plotly_chart(fig, use_container_width=True)
 
-    title_params = (f"λ₂={lam2}, cu={cu}, h={h}, Cf={Cf}, "
-                    f"π₁={pi1}, π₂={pi2}, T={T}")
-    ax.set_title(f"{y_choice}  vs  {xlabel}\n{title_params}", fontsize=10)
-    ax.legend(fontsize=8, loc='best', framealpha=0.85)
-    ax.grid(True, alpha=0.3)
-
-    st.pyplot(fig)
-    plt.close(fig)
-
-    # ── params used for current solve ─────────────────────────────────
-    with st.expander("Parameters used in current solve"):
-        st.json(st.session_state.dp_params)
+        with st.expander("How to interact"):
+            st.markdown("""
+            - **Rotate**: click and drag
+            - **Zoom**: scroll wheel
+            - **Pan**: right-click and drag (or ctrl + drag)
+            - **Reset view**: double-click
+            - **Hover**: read exact values at any point
+            - **Toolbar** (top right of plot): camera presets, download as PNG
+            """)
