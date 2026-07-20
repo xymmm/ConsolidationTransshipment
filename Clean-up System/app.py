@@ -6,7 +6,7 @@ Run with:
 
 Requires solver.py in the same directory.
 Install dependencies:
-    pip install streamlit matplotlib numpy plotly
+    pip install streamlit matplotlib numpy plotly scipy
 """
 
 import math
@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import plotly.graph_objects as go
 import streamlit as st
+from scipy.stats import poisson
 from solver import Params, TransshipmentDP
 
 # ======================================================================
@@ -42,22 +43,55 @@ with st.sidebar.expander("📈  Demand rates", expanded=True):
     lam1 = st.slider("λ₁ (Retailer 1 rate)", 0.5, 15.0, 5.0, 0.5)
     lam2 = st.slider("λ₂ (Retailer 2 rate)", 0.5, 10.0, 3.0, 0.5)
 
+# All cost-related parameters now allow a minimum of 0 and default to 0.
 with st.sidebar.expander("💰  Cost parameters", expanded=True):
-    h   = st.slider("h  (holding cost)",     0.1, 5.0,  1.0, 0.1)
-    Cf  = st.slider("Cf (fixed ship cost)",  0.0, 30.0, 8.0, 0.5)
-    cu  = st.slider("cu (unit ship cost)",   0.1, 15.0, 1.0, 0.1)
-    pi1 = st.slider("π₁ (R1 penalty)",       0.5, 20.0, 6.0, 0.5)
-    pi2 = st.slider("π₂ (R2 penalty)",       0.5, 20.0, 6.0, 0.5)
+    h   = st.slider("h  (holding cost)",     0.0, 5.0,  0.0, 0.1)
+    Cf  = st.slider("Cf (fixed ship cost)",  0.0, 30.0, 0.0, 0.5)
+    cu  = st.slider("cu (unit ship cost)",   0.0, 15.0, 0.0, 0.1)
+    pi1 = st.slider("π₁ (R1 penalty)",       0.0, 20.0, 0.0, 0.5)
+    pi2 = st.slider("π₂ (R2 penalty)",       0.0, 20.0, 0.0, 0.5)
 
 with st.sidebar.expander("🏁  Terminal costs", expanded=False):
-    c1 = st.slider("c₁ (clear R1 backlog)", 0.0, 20.0, 6.0, 0.5)
-    c2 = st.slider("c₂ (clear R2 backlog)", 0.0, 20.0, 6.0, 0.5)
-    v2 = st.slider("v₂ (salvage R2 inv)",   0.0, 10.0, 1.0, 0.5)
+    c1 = st.slider("c₁ (clear R1 backlog)", 0.0, 20.0, 0.0, 0.5)
+    c2 = st.slider("c₂ (clear R2 backlog)", 0.0, 20.0, 0.0, 0.5)
+    v2 = st.slider("v₂ (salvage R2 inv)",   0.0, 10.0, 0.0, 0.5)
+    st.caption("The exact Cf=0 staircase assumes zero terminal cost "
+               "(c₁=c₂=v₂=0). Set them to 0 to match the analytical figure.")
 
+# ── adaptive state-space bounds ─────────────────────────────────────────
+# Truncating the state space too tightly caps the Retailer-2 backorder cost
+# and biases the DP toward early dispatch. The safe rule scales the bounds
+# with the expected demand mass over the horizon plus a ~4-sigma buffer.
 with st.sidebar.expander("📐  State space", expanded=False):
-    I2_max = st.slider("I2_max", 10, 100, 40,  5)
-    I2_min = st.slider("I2_min", -20, 0, -10,  1)
-    b1_max = st.slider("b1_max", 10, 100, 40,  5)
+    s1 = lam1 * T          # expected Retailer-1 demand over the horizon
+    s2 = lam2 * T          # expected Retailer-2 demand over the horizon
+    rec_I2_min = -int(math.ceil(s2 + 4.0 * math.sqrt(s2)))
+    rec_I2_max =  int(math.ceil(max(40.0, s2 + 4.0 * math.sqrt(s2))))
+    rec_b1_max =  int(math.ceil(s1 + 4.0 * math.sqrt(s1)))
+
+    auto_bounds = st.checkbox("Auto bounds (recommended)", value=True)
+    if auto_bounds:
+        I2_max, I2_min, b1_max = rec_I2_max, rec_I2_min, rec_b1_max
+        st.caption(f"Auto: I₂∈[{I2_min}, {I2_max}], b1_max={b1_max}  "
+                   f"(from λ₁T={s1:.0f}, λ₂T={s2:.0f})")
+    else:
+        # Widened ranges so the recommended values are always reachable.
+        I2_max = st.slider("I2_max",  10, 200, rec_I2_max, 5)
+        I2_min = st.slider("I2_min", -200,  0, rec_I2_min, 1)
+        b1_max = st.slider("b1_max",  10, 200, rec_b1_max, 5)
+
+# ── threshold display option ────────────────────────────────────────────
+with st.sidebar.expander("📊  Threshold display", expanded=False):
+    retained = st.checkbox("Show retained level (Ī₂ − 1)", value=False)
+    st.caption(
+        "Applies to the 'Ī₂ threshold (Case 2)' plot only.\n\n"
+        "OFF (default): the curve is the PARTICIPATION THRESHOLD Ī₂, i.e. the "
+        "smallest Retailer-2 inventory I₂ at which a dispatch happens.\n\n"
+        "ON: the curve is the RETAINED LEVEL Ī₂ − 1, i.e. the inventory kept "
+        "after dispatch (equivalently, the largest I₂ that does NOT dispatch). "
+        "Turn this on to line up with a figure that plots retained inventory "
+        "instead of the participation threshold."
+    )
 
 # ── solve button ────────────────────────────────────────────────────────
 st.sidebar.markdown("---")
@@ -67,9 +101,10 @@ st.sidebar.caption("Press after changing parameters. DP may take a few seconds."
 # ======================================================================
 # DIMENSIONLESS GROUPS (always shown, no solve needed)
 # ======================================================================
-alpha2 = lam2 * cu / (h + pi2)
-phi2   = 2 * lam2 * Cf / (h + pi2) if Cf > 0 else 0.0
-gamma  = lam2 * (pi1 - pi2) / (h + pi2)
+hp2 = max(h + pi2, 1e-9)   # guard against division by zero when h=pi2=0
+alpha2 = lam2 * cu / hp2
+phi2   = 2 * lam2 * Cf / hp2 if Cf > 0 else 0.0
+gamma  = lam2 * (pi1 - pi2) / hp2
 beta   = round(alpha2 - 0.5)
 gamT   = gamma * T
 
@@ -104,6 +139,21 @@ st.markdown("---")
 # ANALYTICAL HELPERS
 # ======================================================================
 
+def tau_grid(T_, n_uniform=300, n_dense=400, band=0.6):
+    """
+    Dense τ grid for the plots. A uniform grid over (0, T] is combined with a
+    fine cluster just above τ* = cu/(h+π₁), where the threshold plunges from
+    +∞ through a few one-unit microsteps. A coarse uniform grid samples too
+    few points there and aliases the microsteps away.
+    """
+    tau_star = cu / max(h + pi1, 1e-9)
+    base  = np.linspace(0.05, T_, n_uniform)
+    lo    = max(0.05, tau_star - 0.05)
+    hi    = min(T_, tau_star + band)
+    dense = np.linspace(lo, hi, n_dense) if hi > lo else np.array([])
+    return np.unique(np.concatenate([base, dense]))
+
+
 def _sqrt(x):
     return math.sqrt(max(0.0, x))
 
@@ -119,11 +169,31 @@ def an_b1star(I2, tau):
 def an_I2bar(tau):
     xi = 1 - 2*alpha2 + 2*gamma*tau
     if phi2 == 0:
-        return lam2*cu/(h+pi2) - gamma*tau
+        return lam2*cu/hp2 - gamma*tau
     return 0.5*(_sqrt(xi**2 + 4*phi2) - xi)
 
-def an_I2bar_Cf0(tau):
-    return lam2*cu/(h+pi2) - gamma*tau
+def an_I2bar_Cf0_fluid(tau):
+    """Fluid (continuous) approximation of the Cf=0 threshold: α₂ − γτ."""
+    return lam2*cu/hp2 - gamma*tau
+
+def an_I2bar_Cf0_exact(tau, nmax=200):
+    """
+    Exact Cf=0 participation threshold (paper, Section 5-6):
+        Ibar(tau) = min{ n>=1 : M(n,tau) >= g(tau) },
+        M(n,tau) = E[min(K,n)] = sum_{j=1}^n P(K>=j),   K ~ Poisson(lam2*tau),
+        g(tau)   = lam2 * (cu + (pi2-pi1)*tau) / (h+pi2).
+    Returns np.nan when the threshold is +infinity (no finite dispatch level).
+    """
+    if tau <= 0:
+        return np.nan
+    g = lam2 * (cu + (pi2 - pi1) * tau) / hp2
+    mu = lam2 * tau
+    M = 0.0
+    for n in range(1, nmax + 1):
+        M += poisson.sf(n - 1, mu)   # P(K >= n)
+        if M >= g:
+            return float(n)
+    return np.nan
 
 # ======================================================================
 # SESSION STATE
@@ -134,23 +204,35 @@ if "dp_params" not in st.session_state:
     st.session_state.dp_params = None
 
 if solve_btn:
-    with st.spinner("Solving DP..."):
-        p = Params(
-            T=T, N=N, lam1=lam1, lam2=lam2,
-            h=h, Cf=Cf, cu=cu, pi1=pi1, pi2=pi2,
-            c1=c1, c2=c2, v2=v2,
-            I2_max=I2_max, I2_min=I2_min, b1_max=b1_max,
+    # Warn if the chosen lower bound is likely to bind and distort the policy.
+    if s2 + 3.0 * math.sqrt(s2) > -I2_min:
+        st.warning(
+            f"I2_min={I2_min} may be too tight for λ₂T={s2:.0f}. "
+            f"Recommended I2_min ≤ {rec_I2_min}. "
+            f"A binding lower bound caps the Retailer-2 backorder cost and can "
+            f"shift the DP thresholds. Enable 'Auto bounds' for a safe setting."
         )
-        dp = TransshipmentDP(p)
-        dp.solve(store_V=True, verbose=False)  # store_V=True needed for V^n queries
-        st.session_state.dp = dp
-        st.session_state.dp_params = dict(
-            T=T, N=N, lam1=lam1, lam2=lam2,
-            h=h, Cf=Cf, cu=cu, pi1=pi1, pi2=pi2,
-            c1=c1, c2=c2, v2=v2,
-            I2_max=I2_max, I2_min=I2_min, b1_max=b1_max,
-        )
-    st.success("DP solved!")
+    try:
+        with st.spinner("Solving DP..."):
+            p = Params(
+                T=T, N=N, lam1=lam1, lam2=lam2,
+                h=h, Cf=Cf, cu=cu, pi1=pi1, pi2=pi2,
+                c1=c1, c2=c2, v2=v2,
+                I2_max=I2_max, I2_min=I2_min, b1_max=b1_max,
+            )
+            dp = TransshipmentDP(p)
+            dp.solve(store_V=True, verbose=False)  # store_V=True needed for V^n queries
+            st.session_state.dp = dp
+            st.session_state.dp_params = dict(
+                T=T, N=N, lam1=lam1, lam2=lam2,
+                h=h, Cf=Cf, cu=cu, pi1=pi1, pi2=pi2,
+                c1=c1, c2=c2, v2=v2,
+                I2_max=I2_max, I2_min=I2_min, b1_max=b1_max,
+            )
+        st.success("DP solved!")
+    except AssertionError as e:
+        # e.g. v2 > c2 violates the model assumption, or Delta t too large.
+        st.error(f"Invalid parameters: {e}")
 
 dp = st.session_state.dp
 
@@ -164,7 +246,7 @@ def n_for_tau(tau, dp):
 tab_2d, tab_3d = st.tabs(["📈 2D Plots", "🧊 3D Plots"])
 
 # ======================================================================
-# TAB 1: 2D PLOTS  (existing logic)
+# TAB 1: 2D PLOTS
 # ======================================================================
 with tab_2d:
     st.subheader("Plot settings")
@@ -220,13 +302,18 @@ with tab_2d:
         p = dp.p
 
         if x_choice == "τ (remaining time)":
-            xs = np.linspace(0.05, p.T, 100); xlabel = "τ (remaining time)"
+            xs = tau_grid(p.T); xlabel = "τ (remaining time)"
         elif x_choice == "I₂ (inventory)":
             xs = np.arange(1, p.I2_max + 1);  xlabel = "I₂ (Retailer 2 inventory)"
         else:
             xs = np.arange(1, p.b1_max + 1);  xlabel = "b₁ (Retailer 1 backlog)"
 
         is_I2bar = (y_choice == "Ī₂ threshold (Case 2)")
+
+        # Retained level = participation threshold − 1 (inventory kept after
+        # dispatch). Applied to the DP curve and every analytical overlay so
+        # they stay comparable.
+        offset = 1.0 if retained else 0.0
 
         if is_I2bar:
             ys_dp, ys_an = [], []
@@ -239,8 +326,8 @@ with tab_2d:
                 for I2t in range(1, p.I2_max + 1):
                     if dp.get_policy(n, I2t, b1_q) > 0:
                         th = I2t; break
-                ys_dp.append(th if th is not None else np.nan)
-                ys_an.append(an_I2bar(tau_q))
+                ys_dp.append((th - offset) if th is not None else np.nan)
+                ys_an.append(an_I2bar(tau_q) - offset)
 
             ax.plot(xs, ys_dp, color='steelblue', lw=2, label="DP")
             if show_analytical:
@@ -248,9 +335,14 @@ with tab_2d:
                 ax.plot(xs, an_clean, color='steelblue', lw=1.2,
                         ls='--', alpha=0.7, label="Analytical (corrected)")
             if Cf == 0 and show_analytical and x_choice == "τ (remaining time)":
-                cf0_vals = [an_I2bar_Cf0(float(x)) for x in xs]
-                ax.plot(xs, cf0_vals, 'k:', lw=1.5, alpha=0.6,
-                        label="Cf=0 formula: α₂−γτ")
+                # Exact Poisson staircase (matches the page-10 analytical figure).
+                exact_vals = [an_I2bar_Cf0_exact(float(x)) - offset for x in xs]
+                ax.plot(xs, exact_vals, color='crimson', lw=1.8,
+                        ls='-', alpha=0.85, label="Cf=0 exact staircase")
+                # Fluid (continuous) approximation for reference.
+                fluid_vals = [an_I2bar_Cf0_fluid(float(x)) - offset for x in xs]
+                ax.plot(xs, fluid_vals, 'k:', lw=1.5, alpha=0.6,
+                        label="Cf=0 fluid: α₂−γτ")
 
         else:
             if x_choice == "τ (remaining time)":
@@ -301,8 +393,13 @@ with tab_2d:
                     ax.plot(xs, an_clean, color=col, lw=1.2,
                             ls='--', alpha=0.7, label=f"Analytical  {lbl}")
 
+        # Relabel when the Case-2 curve shows the retained level.
+        y_label_txt = y_choice
+        if is_I2bar and retained:
+            y_label_txt = "Retained I₂  (= Ī₂ − 1)"
+
         ax.set_xlabel(xlabel, fontsize=12)
-        ax.set_ylabel(y_choice, fontsize=11)
+        ax.set_ylabel(y_label_txt, fontsize=11)
 
         if x_choice == "τ (remaining time)":
             ax.invert_xaxis()
@@ -310,7 +407,7 @@ with tab_2d:
 
         title_params = (f"λ₂={lam2}, cu={cu}, h={h}, Cf={Cf}, "
                         f"π₁={pi1}, π₂={pi2}, T={T}")
-        ax.set_title(f"{y_choice}  vs  {xlabel}\n{title_params}", fontsize=10)
+        ax.set_title(f"{y_label_txt}  vs  {xlabel}\n{title_params}", fontsize=10)
         ax.legend(fontsize=8, loc='best', framealpha=0.85)
         ax.grid(True, alpha=0.3)
 
