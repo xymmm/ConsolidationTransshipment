@@ -33,8 +33,8 @@ lam2 = 5.0      # Retailer 2 demand rate
 h    = 1.0      # holding cost
 Cf   = 0.0      # fixed ship cost
 cu   = 2.0      # unit ship cost
-pi1  = 1.5      # Retailer 1 penalty
-pi2  = 4.0      # Retailer 2 penalty
+pi1  = 4.0      # Retailer 1 penalty
+pi2  = 5.5      # Retailer 2 penalty
 
 c1   = 0.0      # terminal: clear R1 backlog
 c2   = 0.0      # terminal: clear R2 backlog

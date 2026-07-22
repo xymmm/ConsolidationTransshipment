@@ -98,12 +98,14 @@ with st.sidebar.expander("📐  State space", expanded=False):
 # ── Cf = 0 comparison overlays ──────────────────────────────────────────
 with st.sidebar.expander("🔍  Cf = 0 model comparison", expanded=False):
     if Cf == 0:
+        show_note_staircase = st.checkbox("Show note staircase (eq. 20-22)", value=True)
         show_cf0_2d = st.checkbox("Overlay 2-D Cf=0 DP (note's model)", value=True)
         n_cf0 = st.select_slider("N for the 2-D DP",
                                  options=[500, 1000, 2000, 4000, 8000],
                                  value=2000)
         st.caption(
-            "Applies to the 'Ī₂ threshold (Case 2)' plot only.\n\n"
+            "Applies to the 'Ī₂ threshold (Case 2)' plot only. These curves are "
+            "controlled here, not by any other toggle.\n\n"
             "The note solves a TWO-dimensional model with value function "
             "V(I₂, τ). Retailer-1 demand is either satisfied on arrival at cost "
             "cᵤ or rejected and charged π₁τ, and the resulting backlog is never "
@@ -112,11 +114,12 @@ with st.sidebar.expander("🔍  Cf = 0 model comparison", expanded=False):
             "which the Retailer-1 backlog is tracked and can be cleared by a "
             "later dispatch. The two models therefore have different optimal "
             "thresholds.\n\n"
-            "Use this overlay to compare the note's analytical staircase against "
-            "a DP of the note's OWN model. The fixed b₁ slider does not affect "
-            "this curve, since the model has no b₁."
+            "Use the overlay to compare the note staircase against a DP of the "
+            "note's OWN model. The fixed b₁ slider does not affect these curves, "
+            "since the note's model has no b₁."
         )
     else:
+        show_note_staircase = False
         show_cf0_2d = False
         n_cf0 = 2000
         st.caption("Set Cf = 0 to enable the comparison with the note's 2-D model.")
@@ -195,31 +198,9 @@ def tau_grid(T_, n_uniform=300, n_dense=400, band=0.6):
     return np.unique(np.concatenate([base, dense]))
 
 
-def _sqrt(x):
-    return math.sqrt(max(0.0, x))
-
-def an_b1star(I2, tau):
-    a2 = alpha2; ph = phi2
-    g  = gamma
-    A  = 2*I2 + 1 - 2*a2 + 2*g*tau
-    D  = A**2 - 4*ph
-    if D < 0 or ph == 0:
-        return None
-    return 0.5*(A - _sqrt(D))
-
-def an_I2bar(tau):
-    xi = 1 - 2*alpha2 + 2*gamma*tau
-    if phi2 == 0:
-        return lam2*cu/hp2 - gamma*tau
-    return 0.5*(_sqrt(xi**2 + 4*phi2) - xi)
-
-def an_I2bar_Cf0_fluid(tau):
-    """Fluid (continuous) approximation of the Cf=0 threshold: α₂ − γτ."""
-    return lam2*cu/hp2 - gamma*tau
-
 def an_I2bar_Cf0_exact(tau, nmax=200):
     """
-    Exact Cf=0 participation threshold (paper, Section 5-6):
+    Note staircase, eq. (20)-(22):
         Ibar(tau) = min{ n>=1 : M(n,tau) >= g(tau) },
         M(n,tau) = E[min(K,n)] = sum_{j=1}^n P(K>=j),   K ~ Poisson(lam2*tau),
         g(tau)   = lam2 * (cu + (pi2-pi1)*tau) / (h+pi2).
@@ -319,7 +300,7 @@ with tab_2d:
             key="y2d",
         )
     with pc3:
-        show_analytical = st.checkbox("Overlay analytical formula", value=True, key="oa2d")
+        st.caption("")
 
     # fixed-dimension sliders
     _T_f    = float(dp.p.T)    if dp is not None else float(T)
@@ -367,7 +348,7 @@ with tab_2d:
         offset = 1.0 if retained else 0.0
 
         if is_I2bar:
-            ys_dp, ys_an = [], []
+            ys_dp = []
             for x in xs:
                 tau_q = float(x) if x_choice == "τ (remaining time)" else tau_fixed
                 I2_q  = int(x)   if x_choice == "I₂ (inventory)"     else I2_fixed
@@ -378,14 +359,9 @@ with tab_2d:
                     if dp.get_policy(n, I2t, b1_q) > 0:
                         th = I2t; break
                 ys_dp.append((th - offset) if th is not None else np.nan)
-                ys_an.append(an_I2bar(tau_q) - offset)
 
             ax.plot(xs, ys_dp, color='steelblue', lw=2,
                     label="3-D DP (I₂, b₁)")
-            if show_analytical:
-                an_clean = [v if v is not None else np.nan for v in ys_an]
-                ax.plot(xs, an_clean, color='steelblue', lw=1.2,
-                        ls='--', alpha=0.7, label="Analytical (corrected)")
             if Cf == 0 and x_choice == "τ (remaining time)":
                 # DP of the note's OWN 2-D model, for a like-for-like comparison
                 # against the note's analytical staircase.
@@ -400,17 +376,12 @@ with tab_2d:
                                 label="2-D Cf=0 DP (note's model)")
                     except Exception as e:
                         st.warning(f"2-D Cf=0 DP failed: {e}")
-                if show_analytical:
-                    # Note eq. (20)-(22). Labelled as the note's staircase rather
-                    # than "exact": it is built from the always-wait value
-                    # function, so it need not be the exact optimum of the model.
+                # Note eq. (20)-(22). Controlled by its own toggle in the
+                # "Cf = 0 model comparison" panel, controlled only by this panel.
+                if show_note_staircase:
                     exact_vals = [an_I2bar_Cf0_exact(float(x)) - offset for x in xs]
                     ax.plot(xs, exact_vals, color='crimson', lw=1.8,
                             ls='-', alpha=0.85, label="Note staircase (eq. 20-22)")
-                    # Fluid (continuous) approximation for reference.
-                    fluid_vals = [an_I2bar_Cf0_fluid(float(x)) - offset for x in xs]
-                    ax.plot(xs, fluid_vals, 'k:', lw=1.5, alpha=0.6,
-                            label="Cf=0 fluid: α₂−γτ")
 
         else:
             if x_choice == "τ (remaining time)":
@@ -424,7 +395,7 @@ with tab_2d:
                 vary_label = "I₂"
 
             for vv, col in zip(vary_vals, colours):
-                ys_dp, ys_an = [], []
+                ys_dp = []
                 for x in xs:
                     if x_choice == "τ (remaining time)":
                         tau_q = float(x); I2_q = int(vv);   b1_q = b1_fixed
@@ -439,27 +410,20 @@ with tab_2d:
 
                     if y_choice == "q* (optimal dispatch quantity)":
                         ys_dp.append(dp.get_policy(n, I2_q, b1_q))
-                        ys_an.append(None)
                     elif y_choice == "b₁* threshold (Case 1)":
                         th = None
                         for b1t in range(1, min(I2_q, p.b1_max)+1):
                             if dp.get_policy(n, I2_q, b1t) > 0:
                                 th = b1t; break
                         ys_dp.append(th if th is not None else np.nan)
-                        ys_an.append(an_b1star(I2_q, tau_q))
                     else:
                         try:
                             ys_dp.append(dp.get_value(n, I2_q, b1_q))
                         except Exception:
                             ys_dp.append(np.nan)
-                        ys_an.append(None)
 
                 lbl = f"{vary_label}={vv}"
                 ax.plot(xs, ys_dp, color=col, lw=2, label=f"DP  {lbl}")
-                if show_analytical and any(v is not None for v in ys_an):
-                    an_clean = [v if v is not None else np.nan for v in ys_an]
-                    ax.plot(xs, an_clean, color=col, lw=1.2,
-                            ls='--', alpha=0.7, label=f"Analytical  {lbl}")
 
         # Relabel when the Case-2 curve shows the retained level.
         y_label_txt = y_choice
