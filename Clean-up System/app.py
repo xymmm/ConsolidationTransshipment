@@ -17,6 +17,21 @@ import plotly.graph_objects as go
 import streamlit as st
 from scipy.stats import poisson
 from solver import Params, TransshipmentDP
+from solver_cf0_2d import ParamsCf0, SwitchingDPCf0
+
+
+@st.cache_data(show_spinner=False)
+def solve_cf0_2d(T_, N_, lam1_, lam2_, h_, cu_, pi1_, pi2_, c2_, v2_, taus_key):
+    """
+    Solve the note's 2-D Cf=0 switching model and return its threshold curve.
+    The state space is 1-D, so even a large N is cheap. Cached on the parameter
+    tuple so that reruns do not re-solve.
+    """
+    p0 = ParamsCf0(T=T_, N=N_, lam1=lam1_, lam2=lam2_, h=h_, cu=cu_,
+                   pi1=pi1_, pi2=pi2_, c2=c2_, v2=v2_).with_auto_bounds()
+    dp0 = SwitchingDPCf0(p0)
+    dp0.solve(verbose=False)
+    return dp0.threshold_curve(np.array(taus_key))
 
 # ======================================================================
 # PAGE CONFIG
@@ -79,6 +94,32 @@ with st.sidebar.expander("📐  State space", expanded=False):
         I2_max = st.slider("I2_max",  10, 200, rec_I2_max, 5)
         I2_min = st.slider("I2_min", -200,  0, rec_I2_min, 1)
         b1_max = st.slider("b1_max",  10, 200, rec_b1_max, 5)
+
+# ── Cf = 0 comparison overlays ──────────────────────────────────────────
+with st.sidebar.expander("🔍  Cf = 0 model comparison", expanded=False):
+    if Cf == 0:
+        show_cf0_2d = st.checkbox("Overlay 2-D Cf=0 DP (note's model)", value=True)
+        n_cf0 = st.select_slider("N for the 2-D DP",
+                                 options=[500, 1000, 2000, 4000, 8000],
+                                 value=2000)
+        st.caption(
+            "Applies to the 'Ī₂ threshold (Case 2)' plot only.\n\n"
+            "The note solves a TWO-dimensional model with value function "
+            "V(I₂, τ). Retailer-1 demand is either satisfied on arrival at cost "
+            "cᵤ or rejected and charged π₁τ, and the resulting backlog is never "
+            "cleared. There is no b₁ state variable.\n\n"
+            "solver.py is a different, three-dimensional model V(I₂, b₁, τ) in "
+            "which the Retailer-1 backlog is tracked and can be cleared by a "
+            "later dispatch. The two models therefore have different optimal "
+            "thresholds.\n\n"
+            "Use this overlay to compare the note's analytical staircase against "
+            "a DP of the note's OWN model. The fixed b₁ slider does not affect "
+            "this curve, since the model has no b₁."
+        )
+    else:
+        show_cf0_2d = False
+        n_cf0 = 2000
+        st.caption("Set Cf = 0 to enable the comparison with the note's 2-D model.")
 
 # ── threshold display option ────────────────────────────────────────────
 with st.sidebar.expander("📊  Threshold display", expanded=False):
@@ -188,11 +229,21 @@ def an_I2bar_Cf0_exact(tau, nmax=200):
         return np.nan
     g = lam2 * (cu + (pi2 - pi1) * tau) / hp2
     mu = lam2 * tau
+    # Poisson(mu) tail built iteratively (no scipy):
+    #   pmf(0) = e^{-mu},  pmf(j) = pmf(j-1) * mu / j
+    #   P(K >= n) = 1 - P(K <= n-1)
     M = 0.0
+    cdf_below = 0.0          # P(K <= n-2), i.e. mass strictly below n-1
+    pmf = math.exp(-mu)      # pmf(n-1), starts at pmf(0)
     for n in range(1, nmax + 1):
-        M += poisson.sf(n - 1, mu)   # P(K >= n)
+        p_ge_n = 1.0 - (cdf_below + pmf)   # P(K >= n)
+        if p_ge_n < 0.0:
+            p_ge_n = 0.0
+        M += p_ge_n
         if M >= g:
             return float(n)
+        cdf_below += pmf     # now P(K <= n-1)
+        pmf *= mu / n        # advance to pmf(n)
     return np.nan
 
 # ======================================================================
@@ -329,20 +380,37 @@ with tab_2d:
                 ys_dp.append((th - offset) if th is not None else np.nan)
                 ys_an.append(an_I2bar(tau_q) - offset)
 
-            ax.plot(xs, ys_dp, color='steelblue', lw=2, label="DP")
+            ax.plot(xs, ys_dp, color='steelblue', lw=2,
+                    label="3-D DP (I₂, b₁)")
             if show_analytical:
                 an_clean = [v if v is not None else np.nan for v in ys_an]
                 ax.plot(xs, an_clean, color='steelblue', lw=1.2,
                         ls='--', alpha=0.7, label="Analytical (corrected)")
-            if Cf == 0 and show_analytical and x_choice == "τ (remaining time)":
-                # Exact Poisson staircase (matches the page-10 analytical figure).
-                exact_vals = [an_I2bar_Cf0_exact(float(x)) - offset for x in xs]
-                ax.plot(xs, exact_vals, color='crimson', lw=1.8,
-                        ls='-', alpha=0.85, label="Cf=0 exact staircase")
-                # Fluid (continuous) approximation for reference.
-                fluid_vals = [an_I2bar_Cf0_fluid(float(x)) - offset for x in xs]
-                ax.plot(xs, fluid_vals, 'k:', lw=1.5, alpha=0.6,
-                        label="Cf=0 fluid: α₂−γτ")
+            if Cf == 0 and x_choice == "τ (remaining time)":
+                # DP of the note's OWN 2-D model, for a like-for-like comparison
+                # against the note's analytical staircase.
+                if show_cf0_2d:
+                    try:
+                        cf0_vals = solve_cf0_2d(
+                            float(p.T), int(n_cf0), float(lam1), float(lam2),
+                            float(h), float(cu), float(pi1), float(pi2),
+                            float(c2), float(v2), tuple(float(x) for x in xs),
+                        ) - offset
+                        ax.plot(xs, cf0_vals, color='seagreen', lw=1.8, ls='--',
+                                label="2-D Cf=0 DP (note's model)")
+                    except Exception as e:
+                        st.warning(f"2-D Cf=0 DP failed: {e}")
+                if show_analytical:
+                    # Note eq. (20)-(22). Labelled as the note's staircase rather
+                    # than "exact": it is built from the always-wait value
+                    # function, so it need not be the exact optimum of the model.
+                    exact_vals = [an_I2bar_Cf0_exact(float(x)) - offset for x in xs]
+                    ax.plot(xs, exact_vals, color='crimson', lw=1.8,
+                            ls='-', alpha=0.85, label="Note staircase (eq. 20-22)")
+                    # Fluid (continuous) approximation for reference.
+                    fluid_vals = [an_I2bar_Cf0_fluid(float(x)) - offset for x in xs]
+                    ax.plot(xs, fluid_vals, 'k:', lw=1.5, alpha=0.6,
+                            label="Cf=0 fluid: α₂−γτ")
 
         else:
             if x_choice == "τ (remaining time)":
