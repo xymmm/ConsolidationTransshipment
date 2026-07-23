@@ -470,17 +470,24 @@ with tab_3d:
             z_choice = st.selectbox(
                 "Z axis (surface height)",
                 ["q* (optimal dispatch quantity)",
+                 "b̄₁ dispatch trigger",
                  "V^n (value function)"],
                 key="z3d",
             )
+        is_b1bar = z_choice.startswith("b̄₁")
         with c2_:
-            xy_choice = st.selectbox(
-                "X-Y plane",
-                ["I₂ × b₁  (fixed τ)",
-                 "I₂ × τ   (fixed b₁)",
-                 "b₁ × τ   (fixed I₂)"],
-                key="xy3d",
-            )
+            if is_b1bar:
+                # b1bar is a function of (I2, tau) only, so the plane is fixed.
+                xy_choice = "I₂ × τ   (fixed b₁)"
+                st.selectbox("X-Y plane", [xy_choice], key="xy3d_b", disabled=True)
+            else:
+                xy_choice = st.selectbox(
+                    "X-Y plane",
+                    ["I₂ × b₁  (fixed τ)",
+                     "I₂ × τ   (fixed b₁)",
+                     "b₁ × τ   (fixed I₂)"],
+                    key="xy3d",
+                )
         with c3_:
             colorscale = st.selectbox(
                 "Colour scheme",
@@ -488,8 +495,22 @@ with tab_3d:
                 key="cs3d",
             )
 
+        if is_b1bar:
+            st.caption(
+                "b̄₁(I₂, τ) is the smallest Retailer-1 backlog at which the DP "
+                "dispatches, i.e. the dispatch trigger of the general-Cf note. "
+                "It depends on I₂ and τ only, so the X-Y plane is fixed and the "
+                "b₁ slider does not apply. States where the DP never dispatches "
+                "(b̄₁ = +∞) are shown as gaps in the surface."
+            )
+            b1bar_cap = st.slider("Cap for display (states above are left blank)",
+                                  5, int(_b1_max3), min(30, int(_b1_max3)),
+                                  key="b1barcap")
+
         # fixed slider for the third dimension
-        if "fixed τ" in xy_choice:
+        if is_b1bar:
+            tau_fixed3, I2_fixed3, b1_fixed3 = None, None, None
+        elif "fixed τ" in xy_choice:
             tau_fixed3 = st.slider("Fixed τ", 0.05, _T_f3, _T_f3, 0.05, key="tau3d")
             I2_fixed3, b1_fixed3 = None, None
         elif "fixed b₁" in xy_choice:
@@ -517,6 +538,19 @@ with tab_3d:
         Z = np.zeros((len(ys), len(xs)))
         for i, yv in enumerate(ys):
             for j, xv in enumerate(xs):
+                if is_b1bar:
+                    # scan b1 upward for the first dispatch at this (I2, tau)
+                    I2_q = max(p.I2_min, min(p.I2_max, int(xv)))
+                    n = n_for_tau(float(yv), dp)
+                    trig = np.nan
+                    if I2_q >= 1:
+                        for b1t in range(1, min(b1bar_cap, p.b1_max) + 1):
+                            if dp.get_policy(n, I2_q, b1t) > 0:
+                                trig = b1t
+                                break
+                    Z[i, j] = trig
+                    continue
+
                 if "I₂ × b₁" in xy_choice:
                     I2_q, b1_q, tau_q = int(xv), int(yv), tau_fixed3
                 elif "I₂ × τ" in xy_choice:
