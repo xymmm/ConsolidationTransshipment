@@ -4,9 +4,31 @@ app.py  —  Interactive Transshipment Policy Explorer
 Run with:
     streamlit run app.py
 
-Requires solver.py in the same directory.
+Requires solver.py and solver_cf0_2d.py in the same directory.
 Install dependencies:
     pip install streamlit matplotlib numpy plotly scipy
+
+CHANGE LOG (b̄₁ 3-D surface)
+---------------------------
+The b̄₁ branch of the 3-D tab has been rewritten. The previous version
+produced a misleading surface for six reasons, all fixed here.
+
+1. The b₁ scan stopped at a display cap, so any state whose true threshold
+   exceeded the cap was silently written as NaN. "Threshold above the display
+   cap" and "never dispatch" became indistinguishable. The scan now covers the
+   full b₁ range and the two cases are reported separately.
+2. b̄₁ = +∞ was written as NaN and nothing else. A NaN hole in a Plotly surface
+   looks identical to a low region once the camera is tilted, which makes the
+   surface appear to RISE with I₂. The +∞ region is now marked with grey dots
+   on the z = 0 floor, as in Figure 2 of the note.
+3. connectgaps is now pinned to False so the +∞ region is never interpolated
+   across.
+4. The I₂ grid now starts at 1. b̄₁ is undefined at I₂ = 0.
+5. The τ grid is now dense and clustered just above τ* = cᵤ/(h+π₁), where the
+   threshold plunges from +∞ through several one-unit microsteps. A coarse
+   uniform grid aliases that staircase into a single flat slab.
+6. The analytic threshold of Eq. (36) can be overlaid for direct comparison,
+   and diagnostic counts are printed under the figure.
 """
 
 import math
@@ -227,6 +249,73 @@ def an_I2bar_Cf0_exact(tau, nmax=200):
         pmf *= mu / n        # advance to pmf(n)
     return np.nan
 
+
+# ── general-Cf note: analytic dispatch threshold, Eq. (36) ──────────────
+def _Emin_array(mu, mmax):
+    """E[min(K,m)] for m = 0..mmax with K ~ Poisson(mu). Iterative, no scipy."""
+    Em = np.zeros(mmax + 1)
+    pmf = math.exp(-mu)      # P(K = m-1), starting at m = 1
+    cdf_below = 0.0          # P(K <= m-2)
+    M = 0.0
+    for m in range(1, mmax + 1):
+        M += max(1.0 - (cdf_below + pmf), 0.0)   # add P(K >= m)
+        Em[m] = M
+        cdf_below += pmf
+        pmf *= mu / m
+    return Em
+
+
+def b1bar_analytic_row(I2_max_, tau, lam2_, h_, pi1_, pi2_, cu_, Cf_):
+    """
+    Analytic dispatch threshold of the general-Cf note, Eq. (36), for every
+    I₂ = 1..I2_max_ at a single τ.
+
+        delta(m, tau) = (h+pi2)/lam2 * E[min(K,m)] - cu + (pi1-pi2)*tau,
+                        K ~ Poisson(lam2*tau)
+        Sigma_{I2}(b, tau) = sum_{i=0}^{b-1} delta(I2-i, tau)
+        b1bar(I2, tau) = min{ b >= 1 : Sigma_{I2}(b, tau) > Cf }, else +infinity
+
+    delta is non-decreasing in m, so the profitable levels are the top ones and
+    the accumulation stops at the first non-positive margin.
+
+    Returns an array of length I2_max_, indexed by I₂ - 1. NaN means +infinity.
+    """
+    out = np.full(int(I2_max_), np.nan)
+    if tau <= 0 or I2_max_ < 1:
+        return out
+    mu = lam2_ * tau
+    Em = _Emin_array(mu, int(I2_max_))
+    d = (h_ + pi2_) / max(lam2_, 1e-12) * Em - cu_ + (pi1_ - pi2_) * tau
+    pos = np.where(d[1:] > 0.0)[0]
+    if pos.size == 0:
+        return out                       # every margin is non-positive
+    m_c = int(pos[0]) + 1                # critical level
+    P = np.concatenate(([0.0], np.cumsum(d[1:])))   # P[m] = sum_{j<=m} d[j]
+    for I2 in range(m_c, int(I2_max_) + 1):
+        # b = I2 - k, so b = 1..(I2 - m_c + 1) corresponds to k = I2-1..m_c-1
+        ks = np.arange(I2 - 1, m_c - 2, -1)
+        vals = P[I2] - P[ks]
+        hit = vals > Cf_
+        if hit.any():
+            out[I2 - 1] = float(int(np.argmax(hit)) + 1)
+    return out
+
+
+def b1bar_dp_row(dp_, n):
+    """
+    b̄₁ from the DP for every I₂ = 1..I2_max at period index n, computed as the
+    smallest b₁ >= 1 at which the optimal action dispatches. The scan covers the
+    FULL b₁ range of the solver. NaN means the DP never dispatches at any b₁.
+    """
+    p_ = dp_.p
+    pol = dp_.policy[n]                              # (nI2, nb1)
+    lo = 1 - p_.I2_min
+    hi = p_.I2_max - p_.I2_min + 1
+    sub = pol[lo:hi, 1:] > 0                         # I₂ = 1..I2_max, b₁ >= 1
+    any_ = sub.any(axis=1)
+    first = sub.argmax(axis=1) + 1
+    return np.where(any_, first.astype(float), np.nan)
+
 # ======================================================================
 # SESSION STATE
 # ======================================================================
@@ -271,6 +360,199 @@ dp = st.session_state.dp
 def n_for_tau(tau, dp):
     dt = dp.p.T / dp.p.N
     return min(dp.p.N, max(1, round(tau / dt)))
+
+
+# ======================================================================
+# b̄₁ SURFACE RENDERER  (general-Cf note, Figure 2 style)
+# ======================================================================
+def render_b1bar_surface(dp_, colorscale_):
+    p_ = dp_.p
+    tau_star = cu / max(h + pi1, 1e-9)
+
+    st.caption(
+        "b̄₁(I₂, τ) is the smallest Retailer-1 backlog at which a dispatch "
+        "occurs. It depends on I₂ and τ only, so the X-Y plane is fixed and the "
+        "b₁ slider does not apply. States where dispatch is never worthwhile "
+        "have b̄₁ = +∞. They are drawn as grey dots on the z = 0 floor, exactly "
+        "as in Figure 2 of the note, and are NOT part of the surface."
+    )
+
+    if not (c1 == 0.0 and c2 == 0.0 and v2 == 0.0):
+        st.warning(
+            "Figure 2 of the note assumes V(I₂, b₁, 0) = 0. Set c₁ = c₂ = v₂ = 0 "
+            "in the sidebar, otherwise the DP threshold is not comparable with "
+            "the analytic threshold of Eq. (36)."
+        )
+
+    st.info(
+        f"τ* = cᵤ/(h+π₁) = {tau_star:.4f}. For τ ≤ τ* the note proves "
+        f"b̄₁ = +∞ at every I₂. The whole staircase lives just above τ*, so the "
+        f"τ grid is densified there."
+    )
+
+    cA, cB, cC = st.columns(3)
+    with cA:
+        show_analytic = st.checkbox("Overlay analytic b̄₁ (Eq. 36)",
+                                   value=True, key="b1bar_an")
+    with cB:
+        z_cap = st.slider(
+            "z-axis cap (display only, the b₁ scan is never truncated)",
+            5, max(10, int(p_.b1_max)), min(30, int(p_.b1_max)),
+            key="b1bar_zcap")
+    with cC:
+        n_tau_pts = st.select_slider("τ resolution",
+                                     options=[40, 80, 120, 200],
+                                     value=120, key="b1bar_taures")
+
+    # ── grids ──────────────────────────────────────────────────────────
+    # I₂ starts at 1. b̄₁ is undefined at I₂ = 0.
+    xs = np.arange(1, p_.I2_max + 1)
+    base = np.linspace(0.02, float(p_.T), int(n_tau_pts))
+    lo = max(0.02, tau_star - 0.05)
+    hi = min(float(p_.T), tau_star + 0.8)
+    dense = np.linspace(lo, hi, int(n_tau_pts)) if hi > lo else np.array([])
+    ys = np.unique(np.concatenate([base, dense]))
+
+    # ── compute ────────────────────────────────────────────────────────
+    with st.spinner("Building the b̄₁ surface..."):
+        Z_dp = np.full((len(ys), len(xs)), np.nan)
+        Z_an = np.full((len(ys), len(xs)), np.nan)
+        for i, tv in enumerate(ys):
+            n = n_for_tau(float(tv), dp_)
+            Z_dp[i, :] = b1bar_dp_row(dp_, n)
+            if show_analytic:
+                Z_an[i, :] = b1bar_analytic_row(
+                    p_.I2_max, float(tv), lam2, h, pi1, pi2, cu, Cf)
+
+    # +infinity and "finite but above the display cap" are different things
+    inf_mask = np.isnan(Z_dp)
+    over_cap = (~inf_mask) & (Z_dp > z_cap)
+    Z_dp_plot = np.where(over_cap, np.nan, Z_dp)
+
+    XX, YY = np.meshgrid(xs, ys)
+
+    data = [go.Surface(
+        x=xs, y=ys, z=Z_dp_plot,
+        colorscale=colorscale_,
+        connectgaps=False,                 # never interpolate across +infinity
+        cmin=1, cmax=float(z_cap),
+        colorbar=dict(title="b̄₁ (DP)", len=0.6),
+        name="DP",
+        hovertemplate="I₂: %{x}<br>τ: %{y:.3f}<br>"
+                      "b̄₁ (DP): %{z:.0f}<extra></extra>",
+    )]
+
+    if show_analytic:
+        Z_an_plot = np.where((~np.isnan(Z_an)) & (Z_an > z_cap), np.nan, Z_an)
+        data.append(go.Surface(
+            x=xs, y=ys, z=Z_an_plot,
+            colorscale="Greys", showscale=False, opacity=0.45,
+            connectgaps=False,
+            name="analytic (Eq. 36)",
+            hovertemplate="I₂: %{x}<br>τ: %{y:.3f}<br>"
+                          "b̄₁ (analytic): %{z:.0f}<extra></extra>",
+        ))
+
+    if inf_mask.any():
+        data.append(go.Scatter3d(
+            x=XX[inf_mask], y=YY[inf_mask],
+            z=np.zeros(int(inf_mask.sum())),
+            mode="markers",
+            marker=dict(size=1.6, color="lightgrey"),
+            name="b̄₁ = +∞",
+            hovertemplate="I₂: %{x}<br>τ: %{y:.3f}<br>b̄₁ = +∞<extra></extra>",
+        ))
+
+    if over_cap.any():
+        data.append(go.Scatter3d(
+            x=XX[over_cap], y=YY[over_cap],
+            z=np.full(int(over_cap.sum()), float(z_cap)),
+            mode="markers",
+            marker=dict(size=1.8, color="crimson"),
+            name=f"b̄₁ > {z_cap} (finite, above cap)",
+            hovertemplate="I₂: %{x}<br>τ: %{y:.3f}<br>"
+                          "b̄₁ above the display cap<extra></extra>",
+        ))
+
+    fig = go.Figure(data=data)
+    fig.update_layout(
+        scene=dict(
+            xaxis_title="I₂",
+            yaxis_title="τ",
+            zaxis=dict(title="b̄₁", range=[0, float(z_cap) * 1.05]),
+            aspectmode="cube",
+            camera=dict(eye=dict(x=1.7, y=-1.7, z=1.0)),
+        ),
+        height=700,
+        showlegend=True,
+        margin=dict(l=0, r=0, t=60, b=0),
+        title=dict(
+            text="Dispatch threshold b̄₁(I₂, τ)<br>"
+                 f"<sub>λ₁={lam1}, λ₂={lam2}, h={h}, π₁={pi1}, π₂={pi2}, "
+                 f"Cf={Cf}, cᵤ={cu}, T={p_.T}, N={p_.N} · "
+                 f"grey floor dots = +∞</sub>",
+            x=0.5,
+        ),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── diagnostics printed under the figure ───────────────────────────
+    fin = ~np.isnan(Z_dp)
+    bad_I2 = 0
+    for i in range(Z_dp.shape[0]):
+        row = Z_dp[i]
+        for j in range(len(xs) - 1):
+            a, b = row[j], row[j + 1]
+            if not np.isnan(a) and not np.isnan(b) and b > a:
+                bad_I2 += 1
+            elif np.isnan(b) and not np.isnan(a):
+                bad_I2 += 1      # finite then +infinity as I₂ grows also violates
+    bad_tau = 0
+    for j in range(Z_dp.shape[1]):
+        col = Z_dp[:, j]
+        for i in range(len(ys) - 1):
+            a, b = col[i], col[i + 1]
+            if not np.isnan(a) and not np.isnan(b) and b > a:
+                bad_tau += 1
+            elif np.isnan(b) and not np.isnan(a):
+                bad_tau += 1
+
+    msgs = [f"finite cells: {int(fin.sum())} / {Z_dp.size}",
+            f"+∞ cells: {int(inf_mask.sum())}",
+            f"above display cap: {int(over_cap.sum())}",
+            f"monotonicity violations in I₂: {bad_I2}",
+            f"monotonicity violations in τ: {bad_tau}"]
+    if show_analytic:
+        both = fin & (~np.isnan(Z_an))
+        if both.any():
+            gap = Z_dp[both] - Z_an[both]
+            msgs.append(f"DP − analytic on common finite cells: "
+                        f"min {gap.min():.0f}, median {np.median(gap):.0f}, "
+                        f"max {gap.max():.0f}")
+        only_one = int((fin ^ (~np.isnan(Z_an))).sum())
+        msgs.append(f"cells where exactly one of the two is +∞: {only_one}")
+    st.caption(" · ".join(msgs))
+
+    with st.expander("How to read this figure"):
+        st.markdown(
+            "- b̄₁ must be **non-increasing in I₂** and **non-increasing in τ**, "
+            "so the surface descends from the small-τ edge down to the floor "
+            "value 1.\n"
+            "- If the surface ever appears to **rise with I₂**, that is the +∞ "
+            "region being drawn at floor height instead of masked. Check the "
+            "grey dots: they mark where b̄₁ = +∞, and the surface must have a "
+            "hole there.\n"
+            "- Grey floor dots and red cap dots are different. Grey means "
+            "dispatch is never worthwhile. Red means the threshold is finite "
+            "but taller than the z-axis cap. Raise the cap to see those cells.\n"
+            "- Near the trigger boundary the cost advantage of dispatching is "
+            "O(Δt), so b̄₁ from the DP can wobble by one unit. Raise N before "
+            "reading anything into a one-unit step.\n"
+            "- To reproduce Figure 2 of the note, set c₁ = c₂ = v₂ = 0 and use "
+            "the Section 6.2 parameters λ₁=5, λ₂=3, h=1, π₁=π₂=6, Cf=8, cᵤ=1, "
+            "T=5, with N=800."
+        )
+
 
 # ======================================================================
 # TABS:  2D PLOTS  /  3D PLOTS
@@ -495,108 +777,90 @@ with tab_3d:
                 key="cs3d",
             )
 
+        # ── b̄₁ has its own renderer, see render_b1bar_surface above ────
         if is_b1bar:
-            st.caption(
-                "b̄₁(I₂, τ) is the smallest Retailer-1 backlog at which the DP "
-                "dispatches, i.e. the dispatch trigger of the general-Cf note. "
-                "It depends on I₂ and τ only, so the X-Y plane is fixed and the "
-                "b₁ slider does not apply. States where the DP never dispatches "
-                "(b̄₁ = +∞) are shown as gaps in the surface."
-            )
-            b1bar_cap = st.slider("Cap for display (states above are left blank)",
-                                  5, int(_b1_max3), min(30, int(_b1_max3)),
-                                  key="b1barcap")
+            render_b1bar_surface(dp, colorscale)
 
-        # fixed slider for the third dimension
-        if is_b1bar:
-            tau_fixed3, I2_fixed3, b1_fixed3 = None, None, None
-        elif "fixed τ" in xy_choice:
-            tau_fixed3 = st.slider("Fixed τ", 0.05, _T_f3, _T_f3, 0.05, key="tau3d")
-            I2_fixed3, b1_fixed3 = None, None
-        elif "fixed b₁" in xy_choice:
-            b1_fixed3 = st.slider("Fixed b₁", 0, _b1_max3, min(5, _b1_max3), key="b13d")
-            tau_fixed3, I2_fixed3 = None, None
-        else:  # fixed I₂
-            I2_fixed3 = st.slider("Fixed I₂", 1, _I2_max3, min(10, _I2_max3), key="i23d")
-            tau_fixed3, b1_fixed3 = None, None
-
-        # build grid
-        if "I₂ × b₁" in xy_choice:
-            xs = np.arange(0, _I2_max3 + 1)
-            ys = np.arange(0, _b1_max3 + 1)
-            x_label, y_label = "I₂", "b₁"
-        elif "I₂ × τ" in xy_choice:
-            xs = np.arange(0, _I2_max3 + 1)
-            ys = np.linspace(0.05, _T_f3, 30)
-            x_label, y_label = "I₂", "τ"
         else:
-            xs = np.arange(0, _b1_max3 + 1)
-            ys = np.linspace(0.05, _T_f3, 30)
-            x_label, y_label = "b₁", "τ"
+            # fixed slider for the third dimension
+            if "fixed τ" in xy_choice:
+                tau_fixed3 = st.slider("Fixed τ", 0.05, _T_f3, _T_f3, 0.05,
+                                       key="tau3d")
+                I2_fixed3, b1_fixed3 = None, None
+            elif "fixed b₁" in xy_choice:
+                b1_fixed3 = st.slider("Fixed b₁", 0, _b1_max3, min(5, _b1_max3),
+                                      key="b13d")
+                tau_fixed3, I2_fixed3 = None, None
+            else:  # fixed I₂
+                I2_fixed3 = st.slider("Fixed I₂", 1, _I2_max3, min(10, _I2_max3),
+                                      key="i23d")
+                tau_fixed3, b1_fixed3 = None, None
 
-        # compute Z
-        Z = np.zeros((len(ys), len(xs)))
-        for i, yv in enumerate(ys):
-            for j, xv in enumerate(xs):
-                if is_b1bar:
-                    # scan b1 upward for the first dispatch at this (I2, tau)
-                    I2_q = max(p.I2_min, min(p.I2_max, int(xv)))
-                    n = n_for_tau(float(yv), dp)
-                    trig = np.nan
-                    if I2_q >= 1:
-                        for b1t in range(1, min(b1bar_cap, p.b1_max) + 1):
-                            if dp.get_policy(n, I2_q, b1t) > 0:
-                                trig = b1t
-                                break
-                    Z[i, j] = trig
-                    continue
+            # build grid
+            if "I₂ × b₁" in xy_choice:
+                xs = np.arange(0, _I2_max3 + 1)
+                ys = np.arange(0, _b1_max3 + 1)
+                x_label, y_label = "I₂", "b₁"
+            elif "I₂ × τ" in xy_choice:
+                xs = np.arange(0, _I2_max3 + 1)
+                ys = np.linspace(0.05, _T_f3, 30)
+                x_label, y_label = "I₂", "τ"
+            else:
+                xs = np.arange(0, _b1_max3 + 1)
+                ys = np.linspace(0.05, _T_f3, 30)
+                x_label, y_label = "b₁", "τ"
 
-                if "I₂ × b₁" in xy_choice:
-                    I2_q, b1_q, tau_q = int(xv), int(yv), tau_fixed3
-                elif "I₂ × τ" in xy_choice:
-                    I2_q, b1_q, tau_q = int(xv), b1_fixed3, float(yv)
-                else:
-                    I2_q, b1_q, tau_q = I2_fixed3, int(xv), float(yv)
+            # compute Z
+            Z = np.zeros((len(ys), len(xs)))
+            for i, yv in enumerate(ys):
+                for j, xv in enumerate(xs):
+                    if "I₂ × b₁" in xy_choice:
+                        I2_q, b1_q, tau_q = int(xv), int(yv), tau_fixed3
+                    elif "I₂ × τ" in xy_choice:
+                        I2_q, b1_q, tau_q = int(xv), b1_fixed3, float(yv)
+                    else:
+                        I2_q, b1_q, tau_q = I2_fixed3, int(xv), float(yv)
 
-                n    = n_for_tau(tau_q, dp)
-                I2_q = max(p.I2_min, min(p.I2_max, I2_q))
-                b1_q = max(0, min(p.b1_max, b1_q))
+                    n    = n_for_tau(tau_q, dp)
+                    I2_q = max(p.I2_min, min(p.I2_max, I2_q))
+                    b1_q = max(0, min(p.b1_max, b1_q))
 
-                if z_choice.startswith("q*"):
-                    Z[i, j] = dp.get_policy(n, I2_q, b1_q)
-                else:
-                    try:
-                        Z[i, j] = dp.get_value(n, I2_q, b1_q)
-                    except Exception:
-                        Z[i, j] = np.nan
+                    if z_choice.startswith("q*"):
+                        Z[i, j] = dp.get_policy(n, I2_q, b1_q)
+                    else:
+                        try:
+                            Z[i, j] = dp.get_value(n, I2_q, b1_q)
+                        except Exception:
+                            Z[i, j] = np.nan
 
-        # plot
-        fig = go.Figure(data=[go.Surface(
-            x=xs, y=ys, z=Z,
-            colorscale=colorscale,
-            colorbar=dict(title=z_choice.split()[0]),
-            hovertemplate=f"{x_label}: %{{x}}<br>{y_label}: %{{y}}<br>"
-                          f"{z_choice.split()[0]}: %{{z:.3f}}<extra></extra>",
-        )])
+            # plot
+            fig = go.Figure(data=[go.Surface(
+                x=xs, y=ys, z=Z,
+                colorscale=colorscale,
+                connectgaps=False,
+                colorbar=dict(title=z_choice.split()[0]),
+                hovertemplate=f"{x_label}: %{{x}}<br>{y_label}: %{{y}}<br>"
+                              f"{z_choice.split()[0]}: %{{z:.3f}}<extra></extra>",
+            )])
 
-        fig.update_layout(
-            scene=dict(
-                xaxis_title=x_label,
-                yaxis_title=y_label,
-                zaxis_title=z_choice.split()[0],
-                aspectmode='cube',
-            ),
-            height=650,
-            margin=dict(l=0, r=0, t=30, b=0),
-            title=dict(
-                text=f"{z_choice}  over  {xy_choice}<br>"
-                     f"<sub>λ₂={lam2}, cu={cu}, h={h}, Cf={Cf}, "
-                     f"π₁={pi1}, π₂={pi2}, T={T}</sub>",
-                x=0.5,
-            ),
-        )
+            fig.update_layout(
+                scene=dict(
+                    xaxis_title=x_label,
+                    yaxis_title=y_label,
+                    zaxis_title=z_choice.split()[0],
+                    aspectmode='cube',
+                ),
+                height=650,
+                margin=dict(l=0, r=0, t=30, b=0),
+                title=dict(
+                    text=f"{z_choice}  over  {xy_choice}<br>"
+                         f"<sub>λ₂={lam2}, cu={cu}, h={h}, Cf={Cf}, "
+                         f"π₁={pi1}, π₂={pi2}, T={T}</sub>",
+                    x=0.5,
+                ),
+            )
 
-        st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True)
 
         with st.expander("How to interact"):
             st.markdown("""
