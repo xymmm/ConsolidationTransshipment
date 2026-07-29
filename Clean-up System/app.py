@@ -316,6 +316,75 @@ def b1bar_dp_row(dp_, n):
     first = sub.argmax(axis=1) + 1
     return np.where(any_, first.astype(float), np.nan)
 
+
+def dispatch_margin(dp_, n):
+    """
+    wait_cost - min_q dispatch_cost at period index n, for every (I2, b1).
+
+    A strictly positive value means dispatching is strictly better. A value of
+    zero means the DP is exactly indifferent, and then the reported threshold
+    depends entirely on the tie-breaking convention. solver.py compares with a
+    strict '<' and evaluates q = 0 first, so ties are awarded to waiting.
+
+    Returns the margin array shaped like the state grid, or None when the DP
+    was solved without store_V=True.
+    """
+    p_ = dp_.p
+    if dp_.V_all is None or n < 1 or n > p_.N:
+        return None
+    V = dp_.V_all[n - 1]
+    dt = p_.dt
+    I2v = np.arange(p_.I2_min, p_.I2_max + 1)
+    I2g = I2v[:, None]
+    b1g = np.arange(0, p_.b1_max + 1)[None, :]
+    sh = (len(I2v), p_.b1_max + 1)
+    cI = lambda x: np.clip(x, p_.I2_min, p_.I2_max) - p_.I2_min
+    cB = lambda x: np.clip(x, 0, p_.b1_max)
+
+    def branch(q):
+        I2a = np.broadcast_to(I2g - q, sh)
+        b1a = np.broadcast_to(b1g - q, sh)
+        g = (p_.Cf if q > 0 else 0.0) + p_.cu * q + dt * (
+            p_.h * np.maximum(0, I2a) + p_.pi1 * b1a
+            + p_.pi2 * np.maximum(0, -I2a))
+        return (g + p_.p0 * V[cI(I2a), cB(b1a)]
+                  + p_.p1 * V[cI(I2a), cB(b1a + 1)]
+                  + p_.p2 * V[cI(I2a - 1), cB(b1a)])
+
+    wait = branch(0)
+    best = np.full(sh, np.inf)
+    qmax = max(1, min(p_.I2_max, p_.b1_max))
+    for q in range(1, qmax + 1):
+        feas = (I2g >= q) & (b1g >= q)
+        if not feas.any():
+            continue
+        best = np.minimum(best, np.where(feas, branch(q), np.inf))
+    return wait - best
+
+
+def b1bar_dp_row_tie(dp_, n, tol, prefer_dispatch):
+    """
+    b̄₁ for every I₂ = 1..I2_max, computed from the exact dispatch margin so
+    that the tie-breaking convention is explicit.
+
+    Returns (b1bar, tie_at_b1bar). tie_at_b1bar flags the I₂ values whose
+    threshold is decided by a tie rather than by a strict cost advantage.
+    """
+    p_ = dp_.p
+    M = dispatch_margin(dp_, n)
+    if M is None:
+        return b1bar_dp_row(dp_, n), np.zeros(p_.I2_max, bool)
+    lo = 1 - p_.I2_min
+    hi = p_.I2_max - p_.I2_min + 1
+    sub = M[lo:hi, 1:]                               # I₂ = 1..I2_max, b₁ >= 1
+    disp = sub >= -tol if prefer_dispatch else sub > tol
+    any_ = disp.any(axis=1)
+    first = disp.argmax(axis=1)
+    margin_at = np.take_along_axis(sub, first[:, None], axis=1).ravel()
+    out = np.where(any_, (first + 1).astype(float), np.nan)
+    tie = any_ & (np.abs(margin_at) <= tol)
+    return out, tie
+
 # ======================================================================
 # SESSION STATE
 # ======================================================================
@@ -404,6 +473,32 @@ def render_b1bar_surface(dp_, colorscale_):
                                      options=[40, 80, 120, 200],
                                      value=120, key="b1bar_taures")
 
+    cD, cE = st.columns(2)
+    with cD:
+        inf_mode = st.radio(
+            "How to draw b̄₁ = +∞",
+            ["Spikes at the cap", "Grey dots on the floor", "Both"],
+            index=0, key="b1bar_infmode", horizontal=False)
+        st.caption(
+            "Spikes render +∞ at the top of the z axis, which keeps the "
+            "surface visually monotone. Floor dots reproduce Figure 2 of the "
+            "note. Neither is part of the fitted surface."
+        )
+    with cE:
+        tie_rule = st.radio(
+            "Tie-breaking when dispatch and wait cost the same",
+            ["Prefer dispatch", "Prefer wait (solver.py default)"],
+            index=0, key="b1bar_tie", horizontal=False)
+        st.caption(
+            "At the trigger boundary the cost advantage of dispatching is "
+            "O(Δt), and at some states it is exactly zero. The reported b̄₁ "
+            "then depends only on the convention. solver.py compares with a "
+            "strict '<' and evaluates q = 0 first, so it awards ties to "
+            "waiting. States decided by a tie are marked in orange."
+        )
+    prefer_dispatch = tie_rule.startswith("Prefer dispatch")
+    tie_tol = 1e-9
+
     # ── grids ──────────────────────────────────────────────────────────
     # I₂ starts at 1. b̄₁ is undefined at I₂ = 0.
     xs = np.arange(1, p_.I2_max + 1)
@@ -417,9 +512,12 @@ def render_b1bar_surface(dp_, colorscale_):
     with st.spinner("Building the b̄₁ surface..."):
         Z_dp = np.full((len(ys), len(xs)), np.nan)
         Z_an = np.full((len(ys), len(xs)), np.nan)
+        TIE = np.zeros((len(ys), len(xs)), bool)
         for i, tv in enumerate(ys):
             n = n_for_tau(float(tv), dp_)
-            Z_dp[i, :] = b1bar_dp_row(dp_, n)
+            row, tie = b1bar_dp_row_tie(dp_, n, tie_tol, prefer_dispatch)
+            Z_dp[i, :] = row
+            TIE[i, :] = tie
             if show_analytic:
                 Z_an[i, :] = b1bar_analytic_row(
                     p_.I2_max, float(tv), lam2, h, pi1, pi2, cu, Cf)
@@ -454,13 +552,48 @@ def render_b1bar_surface(dp_, colorscale_):
         ))
 
     if inf_mask.any():
+        n_inf = int(inf_mask.sum())
+        top = float(z_cap)
+        if inf_mode in ("Spikes at the cap", "Both"):
+            # one vertical segment per +infinity cell, drawn as a single trace
+            sx, sy, sz = [], [], []
+            for xv, yv in zip(XX[inf_mask], YY[inf_mask]):
+                sx += [xv, xv, None]
+                sy += [yv, yv, None]
+                sz += [0.0, top, None]
+            data.append(go.Scatter3d(
+                x=sx, y=sy, z=sz, mode="lines",
+                line=dict(color="rgba(120,120,120,0.55)", width=2),
+                name="b̄₁ = +∞ (spike to cap)",
+                hoverinfo="skip",
+            ))
+            data.append(go.Scatter3d(
+                x=XX[inf_mask], y=YY[inf_mask], z=np.full(n_inf, top),
+                mode="markers",
+                marker=dict(size=2.4, color="dimgrey", symbol="diamond"),
+                name="b̄₁ = +∞ (cap)",
+                hovertemplate="I₂: %{x}<br>τ: %{y:.3f}<br>"
+                              "b̄₁ = +∞<extra></extra>",
+            ))
+        if inf_mode in ("Grey dots on the floor", "Both"):
+            data.append(go.Scatter3d(
+                x=XX[inf_mask], y=YY[inf_mask], z=np.zeros(n_inf),
+                mode="markers",
+                marker=dict(size=2.6, color="grey"),
+                name="b̄₁ = +∞ (floor, Figure 2 style)",
+                hovertemplate="I₂: %{x}<br>τ: %{y:.3f}<br>"
+                              "b̄₁ = +∞<extra></extra>",
+            ))
+
+    tie_show = TIE & (~inf_mask) & (~over_cap)
+    if tie_show.any():
         data.append(go.Scatter3d(
-            x=XX[inf_mask], y=YY[inf_mask],
-            z=np.zeros(int(inf_mask.sum())),
+            x=XX[tie_show], y=YY[tie_show], z=Z_dp[tie_show],
             mode="markers",
-            marker=dict(size=1.6, color="lightgrey"),
-            name="b̄₁ = +∞",
-            hovertemplate="I₂: %{x}<br>τ: %{y:.3f}<br>b̄₁ = +∞<extra></extra>",
+            marker=dict(size=2.6, color="darkorange"),
+            name="threshold decided by an exact tie",
+            hovertemplate="I₂: %{x}<br>τ: %{y:.3f}<br>"
+                          "b̄₁ = %{z:.0f}, exact tie<extra></extra>",
         ))
 
     if over_cap.any():
@@ -520,8 +653,12 @@ def render_b1bar_surface(dp_, colorscale_):
     msgs = [f"finite cells: {int(fin.sum())} / {Z_dp.size}",
             f"+∞ cells: {int(inf_mask.sum())}",
             f"above display cap: {int(over_cap.sum())}",
+            f"cells decided by an exact tie: {int(TIE.sum())}",
             f"monotonicity violations in I₂: {bad_I2}",
             f"monotonicity violations in τ: {bad_tau}"]
+    if bad_I2 > 0 and int(TIE.sum()) > 0:
+        msgs.append("try the other tie-breaking rule before treating a "
+                    "one-unit ridge as structural")
     if show_analytic:
         both = fin & (~np.isnan(Z_an))
         if both.any():
@@ -535,19 +672,24 @@ def render_b1bar_surface(dp_, colorscale_):
 
     with st.expander("How to read this figure"):
         st.markdown(
-            "- b̄₁ must be **non-increasing in I₂** and **non-increasing in τ**, "
-            "so the surface descends from the small-τ edge down to the floor "
-            "value 1.\n"
-            "- If the surface ever appears to **rise with I₂**, that is the +∞ "
-            "region being drawn at floor height instead of masked. Check the "
-            "grey dots: they mark where b̄₁ = +∞, and the surface must have a "
-            "hole there.\n"
-            "- Grey floor dots and red cap dots are different. Grey means "
+            "- The analytic threshold of Eq. (36) is **non-increasing in I₂ "
+            "and in τ**, by Theorems 3 and 4. Its surface descends from the "
+            "small-τ edge down to the floor value 1.\n"
+            "- The **DP threshold need not be monotone**. In the Section 6.2 "
+            "instance it is not: at τ ≥ 1 it reads ∞, ∞, 3, 3, 3, 4, 4, 3, 3, "
+            "3 for I₂ = 1..10, so a one-unit ridge appears at I₂ = 6 and 7. "
+            "That ridge is stable at N = 200 to 6400 and under four different "
+            "state-space bounds, and the cost margin behind it is about −0.39, "
+            "which is far too large to be numerical. Theorems 3 and 4 apply to "
+            "the analytic bound, not to the optimal threshold.\n"
+            "- Before treating any ridge as structural, check the two "
+            "diagnostics under the figure. A ridge that sits on orange tie "
+            "markers, or that moves when the tie-breaking rule is switched, is "
+            "a convention artefact. A ridge that survives both is real.\n"
+            "- Three marker types appear. Grey means b̄₁ = +∞, that is, "
             "dispatch is never worthwhile. Red means the threshold is finite "
-            "but taller than the z-axis cap. Raise the cap to see those cells.\n"
-            "- Near the trigger boundary the cost advantage of dispatching is "
-            "O(Δt), so b̄₁ from the DP can wobble by one unit. Raise N before "
-            "reading anything into a one-unit step.\n"
+            "but taller than the z-axis cap, so raise the cap. Orange means "
+            "the threshold at that cell was decided by an exact tie.\n"
             "- To reproduce Figure 2 of the note, set c₁ = c₂ = v₂ = 0 and use "
             "the Section 6.2 parameters λ₁=5, λ₂=3, h=1, π₁=π₂=6, Cf=8, cᵤ=1, "
             "T=5, with N=800."
