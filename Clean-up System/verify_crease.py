@@ -68,7 +68,7 @@ def sim(I0,b0,mode):
     return cost
 
 print(f"\n{R:,} paths, tau = 5, b1 = 3, terminal cost 0")
-print(f"{'I2':>4} | {'DP b1bar':>9} | {'sim WAIT0 - DISP0':>22} | {'DP margin':>10}")
+print(f"{'I2':>4} | {'DP b1bar':>9} | {'sim WAIT0 - DISP0':>22}")
 for I2 in [4,5,6,7,8,9]:
     w=sim(I2,3,'wait0'); d=sim(I2,3,'disp0')
     diff=w-d
