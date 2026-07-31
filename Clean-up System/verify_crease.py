@@ -6,6 +6,8 @@ For each I2, compare on identical sample paths:
           first arrival onward
 margin = E[WAIT0] - E[DISP0].  Positive means dispatching now is better.
 No Delta_t in the cost accounting, no truncation in the paths.
+
+state: (I2, 3, 5)
 """
 import numpy as np
 LAM1,LAM2,H,PI1,PI2,CF,CU,T = 5.,3.,1.,6.,6.,8.,1.,5.

@@ -12,6 +12,26 @@ Policies evaluated on identical paths:
                                                   -> should equal Vd   (eq. 27)
    ANALYTIC   the note's threshold policy: dispatch q* whenever b1 >= b1bar
    DP         the backward-induction optimal policy
+
+Model alignment (audited):
+  - cost integrand h*I2+ + pi2*I2- + pi1*b1 integrated EXACTLY between events;
+    dispatch cost Cf + cu*q; terminal cost 0: matches TC in the note's Eq. (3)
+    and the discrete model's g(.) as dt->0.
+  - R1 arrival -> b1+1; R2 demand -> I2-1 (served or backlogged): matches
+    I2(t) = I2^0 - D2(t) - Y(t), b1(t) = D1(t) - Y(t).
+  - trigger times: the ANALYTIC policy is checked at t=0 and after R1
+    arrivals only. This is EXACT for that policy: by Theorems 3-4 its
+    threshold b1bar is non-increasing in I2 and tau, so R2 arrivals and the
+    passage of time can only raise the threshold, never trigger it, and after
+    a dispatch the profitable batch is exhausted. The DP policy is NOT
+    monotone (e.g. (6,3) waits while (5,3) dispatches), so it is checked
+    after EVERY arrival. The only triggers still missed for DP are the
+    time-triggered ones inside the two tau-windows at (6,3),(7,3); their
+    occupancy is tiny, and missing them makes sim-DP an upper bound on the
+    optimal cost, i.e. the reported ANALYTIC-DP gap is conservative.
+
+TRACE: set TRACE_PATHS > 0 to print, for a few sample paths, every event and
+the side-by-side decision of ANALYTIC vs DP on identical arrivals.
 """
 import numpy as np
 from math import exp
@@ -22,6 +42,9 @@ NGRID, IMAX, IMIN, B1M = 1600, 40, -60, 130
 dtg = TAU0 / NGRID
 R = 400_000
 KMAX = 140
+TRACE_PATHS = 3          # event-by-event printout for this many paths
+TRACE_STATE = (30, 2)    # (I2, b1) at tau = TAU0 for the traced paths
+RUN_TABLES = True        # the big Monte-Carlo tables
 rng = np.random.default_rng(20260722)
 
 # ────────────────────────────── analytic tables on the tau grid
@@ -141,9 +164,12 @@ def simulate(I0, b0, mode):
         step2 = alive & ~is1[:, k]
         b1 += step1.astype(np.int64)
         I2 -= step2.astype(np.int64)
-        maybe_dispatch(TAU0 - t, step1)      # only a retailer-1 arrival can trigger
+        trig = alive if mode == 'dp' else step1   # DP: any arrival can trigger
+        maybe_dispatch(TAU0 - t, trig)
     return cost
 
+if not RUN_TABLES:
+    pass
 print(f"replications = {R:,}   horizon tau = {TAU0}   terminal cost = 0")
 print()
 hdr = (f"{'(I2,b1)':>9} | {'Vw (eq20)':>10} {'sim NEVER':>18} | "
@@ -171,3 +197,96 @@ for (I0, b0) in [(30, 0), (30, 2), (20, 5), (12, 3)]:
     g = lambda d: f"{d.mean():8.3f} ± {1.96*d.std(ddof=1)/np.sqrt(R):.3f}"
     print(f"  ({I0},{b0}): ONESHOT - ANALYTIC = {g(d1)}    "
           f"ANALYTIC - DP = {g(d2)}")
+
+
+# ────────────────────────────── TRACE: event-by-event, side by side
+def _analytic_q_exact(I2, b1, tau):
+    """Eq. (33)-(36) evaluated at the exact continuous tau (no grid)."""
+    if I2 < 1 or b1 < 1 or tau <= 0:
+        return 0, 0.0
+    Em = Em_table(LAM2 * tau, mmax=max(I2, 1))
+    d = [0.0] + [(H + PI2) / LAM2 * Em[m] - CU + (PI1 - PI2) * tau
+                 for m in range(1, I2 + 1)]
+    Npos = sum(1 for m in range(1, I2 + 1) if d[m] > 0)
+    if Npos == 0:
+        return 0, 0.0
+    qc = min(b1, Npos)
+    Ssum = sum(d[I2 - i] for i in range(qc))
+    return (qc if Ssum > CF else 0), Ssum
+
+
+def trace_paths(n_paths=TRACE_PATHS, I0=TRACE_STATE[0], b0=TRACE_STATE[1],
+                seed=20260731):
+    trng = np.random.default_rng(seed)
+    for path in range(1, n_paths + 1):
+        n1 = trng.poisson(LAM1 * TAU0)
+        n2 = trng.poisson(LAM2 * TAU0)
+        ev = sorted([(t, 'R1') for t in np.sort(trng.random(n1)) * TAU0]
+                    + [(t, 'R2') for t in np.sort(trng.random(n2)) * TAU0])
+        st = {'AN': [I0, b0, 0.0, 0], 'DP': [I0, b0, 0.0, 0]}  # I2,b1,cost,nCf
+        print("=" * 108)
+        print(f"  PATH {path}   start (I2,b1)=({I0},{b0})  tau0={TAU0}   "
+              f"{n1} R1 arrivals, {n2} R2 demands")
+        print("=" * 108)
+        print(f"  {'#':>3} {'t':>7} {'tau':>7} {'ev':>3} | "
+              f"{'ANALYTIC':<34} {'cum':>8} | {'DP':<28} {'cum':>8}")
+
+        def decide(tag, tau, trigger_ok):
+            I2, b1, c, nc = st[tag]
+            if tag == 'AN':
+                q, _ = _analytic_q_exact(I2, b1, tau) if trigger_ok else (0, 0)
+            else:
+                n = int(np.clip(round(tau / dtg), 1, NGRID))
+                q = int(QDP[n, min(max(I2, 0), IMAX), min(b1, B1M)]) \
+                    if (trigger_ok and I2 > 0 and b1 > 0) else 0
+                q = min(q, min(I2, b1)) if q > 0 else 0
+            if q > 0:
+                st[tag][2] += CF + CU * q
+                st[tag][0] -= q
+                st[tag][1] -= q
+                st[tag][3] += 1
+                return f"({I2:>2},{b1:>2}) DISPATCH q={q} -> ({I2-q},{b1-q})"
+            return f"({I2:>2},{b1:>2}) wait"
+
+        a0 = decide('AN', TAU0, True)
+        d0 = decide('DP', TAU0, True)
+        print(f"  {0:>3} {0.0:>7.3f} {TAU0:>7.3f} {'--':>3} | "
+              f"{a0:<34} {st['AN'][2]:>8.2f} | {d0:<28} {st['DP'][2]:>8.2f}")
+        t = 0.0
+        for k, (te, kind) in enumerate(ev, start=1):
+            seg = te - t
+            for tag in ('AN', 'DP'):
+                I2, b1 = st[tag][0], st[tag][1]
+                st[tag][2] += seg * (H * max(I2, 0) + PI1 * b1
+                                     + PI2 * max(-I2, 0))
+            t = te
+            for tag in ('AN', 'DP'):
+                if kind == 'R1':
+                    st[tag][1] += 1
+                else:
+                    st[tag][0] -= 1
+            tau = TAU0 - t
+            # ANALYTIC: only an R1 arrival can trigger (Theorems 3-4);
+            # DP: any arrival can trigger (its threshold is not monotone)
+            a = decide('AN', tau, kind == 'R1')
+            d = decide('DP', tau, True)
+            print(f"  {k:>3} {t:>7.3f} {tau:>7.3f} {kind:>3} | "
+                  f"{a:<34} {st['AN'][2]:>8.2f} | {d:<28} {st['DP'][2]:>8.2f}")
+        for tag in ('AN', 'DP'):
+            I2, b1 = st[tag][0], st[tag][1]
+            st[tag][2] += (TAU0 - t) * (H * max(I2, 0) + PI1 * b1
+                                        + PI2 * max(-I2, 0))
+        print("-" * 108)
+        print(f"  totals: ANALYTIC cost = {st['AN'][2]:8.2f}  "
+              f"({st['AN'][3]} dispatches, fixed cost {st['AN'][3]*CF:.0f})    "
+              f"DP cost = {st['DP'][2]:8.2f}  "
+              f"({st['DP'][3]} dispatches, fixed cost {st['DP'][3]*CF:.0f})")
+        print()
+
+
+if TRACE_PATHS > 0:
+    print()
+    print("#" * 108)
+    print("#  EVENT-BY-EVENT TRACE: identical arrivals, ANALYTIC vs DP decisions")
+    print("#" * 108)
+    trace_paths()
