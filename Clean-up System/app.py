@@ -33,6 +33,7 @@ produced a misleading surface for six reasons, all fixed here.
 
 import math
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import plotly.graph_objects as go
@@ -699,7 +700,8 @@ def render_b1bar_surface(dp_, colorscale_):
 # ======================================================================
 # TABS:  2D PLOTS  /  3D PLOTS
 # ======================================================================
-tab_2d, tab_3d, tab_q = st.tabs(["📈 2D Plots", "🧊 3D Plots", "🔍 Inspector"])
+tab_2d, tab_3d, tab_q, tab_pol, tab_sim = st.tabs(
+    ["📈 2D Plots", "🧊 3D Plots", "🔍 Inspector", "🗺 Policy Table", "🎬 Simulation"])
 
 # ======================================================================
 # TAB 1: 2D PLOTS
@@ -1136,3 +1138,373 @@ with tab_q:
                           fontsize=10)
             axm.grid(True, alpha=0.3)
             st.pyplot(figm); plt.close(figm)
+
+
+# ======================================================================
+# SHARED HELPERS for Policy Table & Simulation
+# ======================================================================
+def _an_q_exact(I2, b1, tau):
+    """Analytic q* of Eq. (33)-(36) at exact continuous tau. 0 = wait."""
+    if I2 < 1 or b1 < 1 or tau <= 0:
+        return 0
+    mu = lam2 * tau
+    E = 0.0
+    pmf = math.exp(-mu)
+    cdf = pmf
+    Em = [0.0]
+    for k in range(1, I2 + 1):
+        E += 1.0 - cdf
+        Em.append(E)
+        pmf *= mu / k
+        cdf += pmf
+    d = lambda m: (h + pi2) / lam2 * Em[m] - cu + (pi1 - pi2) * tau
+    Np = sum(1 for m in range(1, I2 + 1) if d(m) > 0)
+    if Np == 0:
+        return 0
+    qc = min(b1, Np)
+    S = sum(d(I2 - i) for i in range(qc))
+    return qc if S > Cf else 0
+
+
+# ======================================================================
+# TAB 4: POLICY TABLE — the roadmap: full q*(I2, b1) at a chosen tau
+# ======================================================================
+with tab_pol:
+    if dp is None:
+        st.info("👈  Set parameters and press **Solve DP** first.")
+    else:
+        p = dp.p
+        st.subheader("Optimal policy table q*(I₂, b₁) — the roadmap")
+        st.caption(
+            "The complete rule book of the DP solution for this parameter "
+            "set. Rows are I₂, columns are b₁. A number is the optimal "
+            "dispatch quantity; '·' means wait. Every decision taken in the "
+            "Simulation tab is a lookup into this table."
+        )
+        cp1, cp2, cp3 = st.columns(3)
+        with cp1:
+            tau_p = st.number_input("τ", min_value=float(p.T / p.N),
+                                    max_value=float(p.T), value=float(p.T),
+                                    step=0.05, format="%.4f", key="pol_tau")
+        with cp2:
+            b1_show = st.number_input("show b₁ up to", min_value=5,
+                                      max_value=int(p.b1_max),
+                                      value=min(20, p.b1_max), key="pol_b1c")
+        with cp3:
+            view_mode = st.selectbox(
+                "cell content", ["q*", "q* with analytic diff",
+                                 "wait margin"], key="pol_view")
+
+        n = n_for_tau(float(tau_p), dp)
+        te = n * p.T / p.N
+        st.caption(f"effective τ = n·Δt = {te:.4f}  (n = {n})")
+
+        I2rows = list(range(1, p.I2_max + 1))
+        b1cols = list(range(1, int(b1_show) + 1))
+
+        if view_mode == "wait margin":
+            if dp.V_all is None:
+                st.warning("Re-solve with store_V=True for margins.")
+                data = None
+            else:
+                data = [[round(dp.wait_margin(n, I2, b1), 3)
+                         for b1 in b1cols] for I2 in I2rows]
+                df = pd.DataFrame(data, index=I2rows, columns=b1cols)
+                st.caption("Q(wait) − best dispatch. Positive = dispatch "
+                           "region. A negative pocket between positive "
+                           "neighbours is the crease.")
+                st.dataframe(
+                    df.style.map(
+                        lambda v: "background-color:#FDEBD0"
+                        if isinstance(v, float) and v < 0 else "")
+                    .format("{:.3f}"),
+                    height=560)
+        else:
+            qs = [[dp.get_policy(n, I2, b1) for b1 in b1cols]
+                  for I2 in I2rows]
+            if view_mode == "q*":
+                df = pd.DataFrame(
+                    [["·" if q == 0 else str(q) for q in row] for row in qs],
+                    index=I2rows, columns=b1cols)
+                st.dataframe(df, height=560)
+            else:
+                cells, marks = [], []
+                for I2, row in zip(I2rows, qs):
+                    crow, mrow = [], []
+                    for b1, qd in zip(b1cols, row):
+                        qa = _an_q_exact(I2, b1, te)
+                        if qa == qd:
+                            crow.append("·" if qd == 0 else str(qd))
+                            mrow.append(False)
+                        else:
+                            crow.append(f"{qd if qd else '·'}/{qa if qa else '·'}")
+                            mrow.append(True)
+                    cells.append(crow); marks.append(mrow)
+                df = pd.DataFrame(cells, index=I2rows, columns=b1cols)
+                mk = pd.DataFrame(marks, index=I2rows, columns=b1cols)
+                st.caption("cell = DP/analytic where they differ (orange); "
+                           "a single number where they agree. '·' = wait.")
+                st.dataframe(
+                    df.style.apply(
+                        lambda col: ["background-color:#FDEBD0" if m else ""
+                                     for m in mk[col.name]], axis=0),
+                    height=560)
+                ndis = int(mk.values.sum())
+                st.caption(f"disagreements in this slice: {ndis} "
+                           f"of {mk.size} cells")
+
+        # ── exports ────────────────────────────────────────────────
+        ce1, ce2 = st.columns(2)
+        with ce1:
+            qs_full = [[dp.get_policy(n, I2, b1)
+                        for b1 in range(1, p.b1_max + 1)]
+                       for I2 in I2rows]
+            slice_df = pd.DataFrame(qs_full, index=I2rows,
+                                    columns=range(1, p.b1_max + 1))
+            slice_df.index.name = "I2"
+            st.download_button(
+                f"Download this τ slice (CSV)",
+                slice_df.to_csv().encode(),
+                file_name=f"policy_tau{te:.4f}.csv", mime="text/csv")
+        with ce2:
+            if st.button("Prepare full policy (all τ) as CSV", key="pol_full"):
+                recs = []
+                dtp = p.T / p.N
+                for nn in range(1, p.N + 1):
+                    pol_n = dp.policy[nn]
+                    for I2 in I2rows:
+                        row = pol_n[I2 - p.I2_min, 1:p.b1_max + 1]
+                        nz = np.nonzero(row)[0]
+                        for j in nz:
+                            recs.append((round(nn * dtp, 6), I2,
+                                         int(j) + 1, int(row[j])))
+                full_df = pd.DataFrame(
+                    recs, columns=["tau", "I2", "b1", "q_star"])
+                st.caption(f"{len(full_df):,} dispatch cells "
+                           "(wait cells omitted — every state not listed "
+                           "is a wait).")
+                st.download_button(
+                    "Download full policy (CSV)",
+                    full_df.to_csv(index=False).encode(),
+                    file_name="policy_full.csv", mime="text/csv")
+
+
+# ======================================================================
+# TAB 5: SIMULATION — one journey on the roadmap
+# ======================================================================
+with tab_sim:
+    if dp is None:
+        st.info("👈  Set parameters and press **Solve DP** first.")
+    else:
+        p = dp.p
+        st.subheader("Sample paths under the optimal policy")
+        st.caption(
+            "Exogenous Poisson arrivals push the system along; at every "
+            "event the DP looks up the Policy Table and acts. Costs are "
+            "integrated exactly in continuous time. Tick the overlay to run "
+            "the analytic policy of Eq. (34)+(36) on the SAME arrivals."
+        )
+        cs1, cs2, cs3, cs4 = st.columns(4)
+        with cs1:
+            seed0 = st.number_input("seed", min_value=0, value=42,
+                                    key="sim_seed")
+        with cs2:
+            npaths = st.number_input("paths", min_value=1, max_value=20,
+                                     value=5, key="sim_np")
+        with cs3:
+            I0 = st.number_input("start I₂", min_value=1,
+                                 max_value=int(p.I2_max),
+                                 value=min(30, p.I2_max), key="sim_i0")
+        with cs4:
+            b0 = st.number_input("start b₁", min_value=0,
+                                 max_value=int(p.b1_max),
+                                 value=min(2, p.b1_max), key="sim_b0")
+        show_an = st.checkbox("Overlay analytic policy on the same arrivals",
+                              value=False, key="sim_an")
+
+        dtp = p.T / p.N
+
+        def _dp_q(I2, b1, tau):
+            if I2 < 1 or b1 < 1:
+                return 0
+            n = int(np.clip(round(tau / dtp), 1, p.N))
+            q = dp.get_policy(n, I2, b1)
+            return min(q, min(I2, b1)) if q > 0 else 0
+
+        def run_path(seed):
+            trng = np.random.default_rng(int(seed))
+            n1 = trng.poisson(lam1 * p.T)
+            n2 = trng.poisson(lam2 * p.T)
+            ev = sorted([(t, "R1") for t in np.sort(trng.random(n1)) * p.T]
+                        + [(t, "R2") for t in np.sort(trng.random(n2)) * p.T])
+            pols = {"DP": _dp_q}
+            if show_an:
+                pols["AN"] = _an_q_exact
+            S = {k: dict(I2=int(I0), b1=int(b0), flow=0.0, disp=0.0, nCf=0)
+                 for k in pols}
+            traj = {k: [(0.0, S[k]["I2"], S[k]["b1"])] for k in pols}
+            ships = {k: [] for k in pols}
+            rows = []
+
+            def act(k, tau, trigger_ok):
+                s = S[k]
+                q = pols[k](s["I2"], s["b1"], tau) if trigger_ok else 0
+                if q > 0:
+                    s["disp"] += Cf + cu * q
+                    s["nCf"] += 1
+                    s["I2"] -= q
+                    s["b1"] -= q
+                return q
+
+            q0 = {k: act(k, p.T, True) for k in pols}
+            for k in pols:
+                traj[k].append((0.0, S[k]["I2"], S[k]["b1"]))
+                if q0[k]:
+                    ships[k].append((0.0, q0[k]))
+            rows.append(dict(t=0.0, tau=p.T, ev="--",
+                             **{f"{k}_state": f"({S[k]['I2']+q0[k]},"
+                                              f"{S[k]['b1']+q0[k]})"
+                                for k in pols},
+                             **{f"{k}_act": (f"q={q0[k]}" if q0[k] else "wait")
+                                for k in pols}))
+            t = 0.0
+            for te_, kind in ev:
+                for k in pols:
+                    s = S[k]
+                    s["flow"] += (te_ - t) * (h * max(s["I2"], 0)
+                                              + pi1 * s["b1"]
+                                              + pi2 * max(-s["I2"], 0))
+                t = te_
+                for k in pols:
+                    s = S[k]
+                    if kind == "R1":
+                        s["b1"] += 1
+                    else:
+                        s["I2"] -= 1
+                    traj[k].append((t, s["I2"], s["b1"]))
+                tau = p.T - t
+                pre = {k: (S[k]["I2"], S[k]["b1"]) for k in pols}
+                qk = {}
+                for k in pols:
+                    # AN: only R1 arrivals can trigger (Thms 3-4, exact);
+                    # DP: any arrival can trigger (threshold not monotone)
+                    ok = (kind == "R1") if k == "AN" else True
+                    qk[k] = act(k, tau, ok)
+                    traj[k].append((t, S[k]["I2"], S[k]["b1"]))
+                    if qk[k]:
+                        ships[k].append((t, qk[k]))
+                rows.append(dict(
+                    t=round(t, 4), tau=round(tau, 4), ev=kind,
+                    **{f"{k}_state": f"({pre[k][0]},{pre[k][1]})"
+                       for k in pols},
+                    **{f"{k}_act": (f"q={qk[k]}" if qk[k] else "wait")
+                       for k in pols}))
+            for k in pols:
+                s = S[k]
+                s["flow"] += (p.T - t) * (h * max(s["I2"], 0)
+                                          + pi1 * s["b1"]
+                                          + pi2 * max(-s["I2"], 0))
+            return traj, ships, rows, S
+
+        results = [run_path(int(seed0) + i) for i in range(int(npaths))]
+
+        # ── summary table ─────────────────────────────────────────
+        summ = []
+        for i, (_, ships, _, S) in enumerate(results):
+            row = dict(path=i + 1, seed=int(seed0) + i,
+                       DP_cost=round(S["DP"]["flow"] + S["DP"]["disp"], 2),
+                       DP_dispatches=S["DP"]["nCf"],
+                       DP_fixed=round(S["DP"]["nCf"] * Cf, 1))
+            if show_an:
+                row.update(AN_cost=round(S["AN"]["flow"] + S["AN"]["disp"], 2),
+                           AN_dispatches=S["AN"]["nCf"],
+                           gap=round(S["AN"]["flow"] + S["AN"]["disp"]
+                                     - S["DP"]["flow"] - S["DP"]["disp"], 2))
+            summ.append(row)
+        st.dataframe(pd.DataFrame(summ), hide_index=True)
+
+        pick = st.selectbox(
+            "show path", list(range(1, int(npaths) + 1)),
+            format_func=lambda i: f"path {i} (seed {int(seed0) + i - 1})",
+            key="sim_pick")
+        traj, ships, rows, S = results[pick - 1]
+
+        # ── main view: state trajectories ─────────────────────────
+        figt, (axs, axc) = plt.subplots(
+            2, 1, figsize=(11, 7), sharex=True,
+            gridspec_kw=dict(height_ratios=[3, 2]))
+        styles = {"DP": dict(lw=2.0, alpha=1.0),
+                  "AN": dict(lw=1.4, alpha=0.65, ls="--")}
+        colI, colB = "#1F618D", "#B03A2E"
+        for k in traj:
+            ts = [x[0] for x in traj[k]]
+            axs.plot(ts, [x[1] for x in traj[k]], color=colI,
+                     label=f"I₂ ({k})", **styles[k])
+            axs.plot(ts, [x[2] for x in traj[k]], color=colB,
+                     label=f"b₁ ({k})", **styles[k])
+        for (ts_, q) in ships["DP"]:
+            axs.axvline(ts_, color="0.55", lw=0.8)
+            axs.annotate(f"q={q}", (ts_, axs.get_ylim()[1] * 0.97),
+                         fontsize=7, ha="center", va="top", color="0.3")
+        if show_an:
+            for (ts_, q) in ships["AN"]:
+                axs.plot([ts_], [0], marker="v", color="#B03A2E",
+                         ms=5, alpha=0.6, clip_on=False)
+            # divergence bands: events where exactly one of the two shipped
+            dpT = {round(ts_, 6) for ts_, _ in ships["DP"]}
+            anT = {round(ts_, 6) for ts_, _ in ships["AN"]}
+            for ts_ in dpT ^ anT:
+                axs.axvspan(ts_ - 0.012, ts_ + 0.012, color="#F5B041",
+                            alpha=0.25, lw=0)
+        axs.axhline(0, color="0.7", lw=0.6)
+        axs.set_ylabel("units")
+        axs.set_title(
+            f"path {pick}: vertical lines = DP dispatches"
+            + ("; ▾ = analytic dispatches; orange bands = divergence"
+               if show_an else ""), fontsize=10)
+        axs.legend(fontsize=7, ncol=2 if show_an else 1)
+        axs.grid(True, alpha=0.25)
+
+        # ── cost accumulation (exact piecewise integration) ───────
+        for k in traj:
+            pts_t, pts_c = [0.0], [0.0]
+            flow_acc, disp_acc, tprev = 0.0, 0.0, 0.0
+            idx = 0
+            shp = ships[k]
+            seq = traj[k]
+            for j in range(1, len(seq)):
+                tt, i2, bb = seq[j]
+                i2p, bbp = seq[j - 1][1], seq[j - 1][2]
+                flow_acc += (tt - tprev) * (h * max(i2p, 0) + pi1 * bbp
+                                            + pi2 * max(-i2p, 0))
+                # dispatch jump: same t, I2 decreased with b1 decreased
+                if tt == seq[j - 1][0] and i2 < i2p and bb < bbp:
+                    disp_acc += Cf + cu * (i2p - i2)
+                tprev = tt
+                pts_t.append(tt); pts_c.append(flow_acc + disp_acc)
+            tail = (p.T - tprev) * (h * max(seq[-1][1], 0) + pi1 * seq[-1][2]
+                                    + pi2 * max(-seq[-1][1], 0))
+            pts_t.append(p.T); pts_c.append(flow_acc + disp_acc + tail)
+            axc.plot(pts_t, pts_c,
+                     color="#1F618D" if k == "DP" else "#B03A2E",
+                     label=f"{k}: total "
+                           f"{S[k]['flow'] + S[k]['disp']:.1f} "
+                           f"(dispatch {S[k]['disp']:.0f} in "
+                           f"{S[k]['nCf']}×)", **{
+                               kk: vv for kk, vv in styles[k].items()
+                               if kk != "alpha"})
+        axc.set_xlabel("t"); axc.set_ylabel("cumulative cost")
+        axc.legend(fontsize=8); axc.grid(True, alpha=0.25)
+        figt.tight_layout()
+        st.pyplot(figt); plt.close(figt)
+
+        # ── full event table ──────────────────────────────────────
+        with st.expander("Event table — every decision, including waits"):
+            st.caption(
+                "One row per event. state = (I₂, b₁) after the arrival, "
+                "before the decision; the action column is the Policy-Table "
+                "lookup at that state and τ. The analytic policy is checked "
+                "only after R1 arrivals (exact by Theorems 3-4); the DP is "
+                "checked after every arrival."
+            )
+            st.dataframe(pd.DataFrame(rows), hide_index=True, height=420)
