@@ -293,6 +293,47 @@ class TransshipmentDP:
         """Retained inventory after dispatch: I₂ − q*."""
         return I2 - self.get_policy(n, I2, b1)
 
+    # ── action-value (Q-value) inspection ────────────────────────
+    def action_values(self, n: int, I2: int, b1: int):
+        """
+        Q-values of every feasible action at period n:
+            Q(q) = g(I₂,b₁,q) + E[ V^{n-1}(post-dispatch, post-arrival) ]
+        i.e. the cost of taking action q NOW and playing optimally afterwards.
+        Returns a list of (q, Q) with q = 0 (wait) first.
+        Requires solve(store_V=True).
+        """
+        assert self._solved, "Call solve() first."
+        assert self.V_all is not None, "Re-solve with store_V=True."
+        assert 1 <= n <= self.p.N
+        V = self.V_all[n - 1]
+        I2 = self._clip_I2(I2)
+        b1 = self._clip_b1(b1)
+        q_max = max(0, min(I2, b1)) if (I2 > 0 and b1 > 0) else 0
+        out = []
+        for q in range(0, q_max + 1):
+            I2a, b1a = I2 - q, b1 - q
+            c = self.g(I2, b1, q)
+            c += (self.p.p0 * V[self._ii(self._clip_I2(I2a)),
+                                self._clip_b1(b1a)]
+                + self.p.p1 * V[self._ii(self._clip_I2(I2a)),
+                                self._clip_b1(b1a + 1)]
+                + self.p.p2 * V[self._ii(self._clip_I2(I2a - 1)),
+                                self._clip_b1(b1a)])
+            out.append((q, float(c)))
+        return out
+
+    def wait_margin(self, n: int, I2: int, b1: int) -> float:
+        """
+        Q(wait) − min_{q≥1} Q(q).
+        Positive  -> dispatching now is strictly cheaper (dispatch region).
+        Negative  -> waiting is strictly cheaper (waiting region).
+        NaN       -> no dispatch action is feasible at this state.
+        """
+        av = self.action_values(n, I2, b1)
+        if len(av) < 2:
+            return float('nan')
+        return av[0][1] - min(c for q, c in av[1:])
+
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Quick self-test

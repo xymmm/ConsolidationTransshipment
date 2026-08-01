@@ -699,7 +699,7 @@ def render_b1bar_surface(dp_, colorscale_):
 # ======================================================================
 # TABS:  2D PLOTS  /  3D PLOTS
 # ======================================================================
-tab_2d, tab_3d = st.tabs(["📈 2D Plots", "🧊 3D Plots"])
+tab_2d, tab_3d, tab_q = st.tabs(["📈 2D Plots", "🧊 3D Plots", "🔍 Inspector"])
 
 # ======================================================================
 # TAB 1: 2D PLOTS
@@ -836,7 +836,7 @@ with tab_2d:
                         ys_dp.append(dp.get_policy(n, I2_q, b1_q))
                     elif y_choice == "b₁* threshold (Case 1)":
                         th = None
-                        for b1t in range(1, min(I2_q, p.b1_max)+1):
+                        for b1t in range(1, p.b1_max + 1):  # FULL scan; capping at I2 silently hides thresholds > I2
                             if dp.get_policy(n, I2_q, b1t) > 0:
                                 th = b1t; break
                         ys_dp.append(th if th is not None else np.nan)
@@ -1013,3 +1013,126 @@ with tab_3d:
             - **Hover**: read exact values at any point
             - **Toolbar** (top right of plot): camera presets, download as PNG
             """)
+
+# ======================================================================
+# TAB 3: INSPECTOR — exact-τ threshold curve & action-value comparison
+# ======================================================================
+with tab_q:
+    if dp is None:
+        st.info("👈  Set parameters and press **Solve DP** to use the inspector.")
+    else:
+        p = dp.p
+
+        st.subheader("b̄₁ vs I₂ at exact τ values")
+        st.caption(
+            "Type any τ values (comma-separated). Each τ is mapped to the "
+            "nearest DP period n and the effective τ = n·Δt is reported, so "
+            "you always know exactly which slice you are looking at. The DP "
+            "scan covers the FULL b₁ range. Dashed lines are the analytic "
+            "threshold of Eq. (36) at the same effective τ."
+        )
+        tau_text = st.text_input("τ values", value="1.0, 2.0, 5.0",
+                                 key="insp_taus")
+        show_an_i = st.checkbox("Overlay analytic Eq. (36)", value=True,
+                                key="insp_an")
+        try:
+            tau_list = [float(s) for s in tau_text.replace("，", ",").split(",")
+                        if s.strip()]
+        except ValueError:
+            tau_list = []
+            st.error("Could not parse the τ list.")
+        tau_list = [tv for tv in tau_list if 0 < tv <= p.T]
+
+        if tau_list:
+            figq, axq = plt.subplots(figsize=(10, 5))
+            cols = cm.tab10(np.linspace(0, 0.9, max(len(tau_list), 2)))
+            xsI = np.arange(1, p.I2_max + 1)
+            for tv, col in zip(tau_list, cols):
+                n = n_for_tau(float(tv), dp)
+                te = n * p.T / p.N
+                ys = b1bar_dp_row(dp, n)
+                axq.step(xsI, ys, where="mid", color=col, lw=2,
+                         label=f"DP  τ={tv:g} (eff {te:.4g})")
+                if show_an_i:
+                    ya = b1bar_analytic_row(p.I2_max, te, lam2, h, pi1, pi2,
+                                            cu, Cf)
+                    axq.step(xsI, ya, where="mid", color=col, lw=1.4,
+                             ls="--", alpha=0.7,
+                             label=f"analytic τ={te:.4g}")
+            axq.set_xlabel("I₂"); axq.set_ylabel("b̄₁(I₂, τ)")
+            axq.set_title("Dispatch threshold vs I₂ at exact τ\n"
+                          "(missing points = b̄₁ = +∞, dispatch never pays)",
+                          fontsize=10)
+            axq.legend(fontsize=8); axq.grid(True, alpha=0.3)
+            st.pyplot(figq); plt.close(figq)
+
+        st.markdown("---")
+        st.subheader("Action values: dispatch vs wait at one state")
+        st.caption(
+            "Q(q) = immediate cost of action q + expected cost-to-go under "
+            "OPTIMAL play afterwards. Q(0) is waiting. The margin "
+            "Q(wait) − minₖ Q(q) is positive exactly where dispatching now "
+            "is strictly cheaper. Both branches share the same optimal "
+            "continuation, so this is the like-for-like comparison of the "
+            "two actions."
+        )
+        cq1, cq2, cq3 = st.columns(3)
+        with cq1:
+            tau_q = st.number_input("τ", min_value=float(p.T / p.N),
+                                    max_value=float(p.T), value=float(p.T),
+                                    step=0.05, format="%.4f", key="insp_tauq")
+        with cq2:
+            I2_q = st.number_input("I₂", min_value=1, max_value=int(p.I2_max),
+                                   value=min(6, p.I2_max), key="insp_i2")
+        with cq3:
+            b1_q = st.number_input("b₁", min_value=1, max_value=int(p.b1_max),
+                                   value=min(3, p.b1_max), key="insp_b1")
+
+        if dp.V_all is None:
+            st.warning("Re-solve with store_V=True to use action values.")
+        else:
+            n = n_for_tau(float(tau_q), dp)
+            te = n * p.T / p.N
+            av = dp.action_values(n, int(I2_q), int(b1_q))
+            qs = [q for q, _ in av]; vs = [v for _, v in av]
+            best = int(np.argmin(vs))
+            figb, axb = plt.subplots(figsize=(8, 3.6))
+            bars = axb.bar([str(q) if q else "wait" for q in qs], vs,
+                           color=["#B03A2E" if i == best else "#5D6D7E"
+                                  for i in range(len(qs))])
+            lo, hi = min(vs), max(vs)
+            axb.set_ylim(lo - 0.15 * (hi - lo + 1e-9),
+                         hi + 0.10 * (hi - lo + 1e-9))
+            for b, v in zip(bars, vs):
+                axb.text(b.get_x() + b.get_width() / 2, v, f"{v:.3f}",
+                         ha="center", va="bottom", fontsize=8)
+            axb.set_xlabel("action q"); axb.set_ylabel("Q(q)")
+            axb.set_title(f"Action values at (I₂={int(I2_q)}, b₁={int(b1_q)}, "
+                          f"τ_eff={te:.4g})   red = optimal", fontsize=10)
+            st.pyplot(figb); plt.close(figb)
+            m = dp.wait_margin(n, int(I2_q), int(b1_q))
+            if np.isnan(m):
+                st.info("No dispatch action is feasible at this state.")
+            elif m > 0:
+                st.success(f"Q(wait) − best dispatch = **+{m:.4f}** → "
+                           f"dispatching now is strictly cheaper.")
+            else:
+                st.info(f"Q(wait) − best dispatch = **{m:.4f}** → "
+                        f"waiting is strictly cheaper.")
+
+            st.markdown("**Margin curve** — the same quantity as a function "
+                        "of I₂ at this b₁ and τ. A dip below zero is a "
+                        "waiting pocket; this is the crease, measured in "
+                        "money.")
+            xsm = np.arange(1, p.I2_max + 1)
+            ms = [dp.wait_margin(n, int(x), int(b1_q)) for x in xsm]
+            figm, axm = plt.subplots(figsize=(10, 3.8))
+            axm.axhline(0, color="0.4", lw=0.8)
+            axm.plot(xsm, ms, marker="o", ms=3.5, lw=1.6, color="#1F618D")
+            axm.set_xlabel("I₂")
+            axm.set_ylabel("Q(wait) − best dispatch")
+            axm.set_title(f"Dispatch-vs-wait margin at b₁={int(b1_q)}, "
+                          f"τ_eff={te:.4g}   (>0: dispatch region)",
+                          fontsize=10)
+            axm.grid(True, alpha=0.3)
+            st.pyplot(figm); plt.close(figm)

@@ -64,8 +64,17 @@ DENSE_BAND = 0.6   # width of the dense cluster above tau*
 AUTO_BOUNDS = True
 I2_MIN, I2_MAX, B1_MAX = -10, 40, 40   # used only when AUTO_BOUNDS = False
 
+# --- Figure 3: b1bar vs I2 at EXACT tau values (full-scan DP + analytic) ---
+TAU_LIST_B1BAR = [1.0, 2.0, 5.0]
+
+# --- Figure 4: dispatch-vs-wait margin vs I2, and a printed Q-table --------
+B1_FOR_MARGIN  = 3            # fixed b1 for the margin curve
+STATE_FOR_Q    = (6, 3, 5.0)  # (I2, b1, tau) for the printed action values
+
 SAVE_CASE1 = "threshold_case1_b1star.png"
 SAVE_CASE2 = "threshold_case2_I2bar.png"
+SAVE_B1BAR = "threshold_b1bar_vs_I2.png"
+SAVE_MARGIN = "margin_vs_I2.png"
 # ══════════════════════════════════════════════════════════════════════
 
 
@@ -89,7 +98,7 @@ p = Params(
     I2_max=I2_max, I2_min=I2_min, b1_max=b1_max,
 )
 dp = TransshipmentDP(p)
-dp.solve(store_V=False, verbose=False)
+dp.solve(store_V=True, verbose=False)   # store_V: needed for Figures 3-4
 
 title_params = f"lam2={lam2}, cu={cu}, h={h}, Cf={Cf}, pi1={pi1}, pi2={pi2}, T={T}"
 
@@ -118,8 +127,8 @@ def dp_b1star(I2, tau):
     """Smallest b1 >= 1 at which the DP dispatches, at the given I2."""
     n = n_for_tau(tau)
     I2q = max(I2_min, min(I2_max, I2))
-    for b1t in range(1, min(I2q, b1_max) + 1):
-        if dp.get_policy(n, I2q, b1t) > 0:
+    for b1t in range(1, b1_max + 1):    # FULL scan: capping at I2 silently
+        if dp.get_policy(n, I2q, b1t) > 0:  # hides thresholds > I2
             return b1t
     return np.nan
 
@@ -215,5 +224,101 @@ if PRINT_COMPARISON and Cf == 0 and ys_2d is not None and ys_an is not None:
     for tau in [4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0]:
         i = int(np.argmin(np.abs(xs - tau)))
         print(f" {tau:4.1f} | {ys_3d[i]:6.0f} | {ys_2d[i]:6.0f} | {ys_an[i]:7.0f}")
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Analytic threshold of the general-Cf note, Eq. (36)  (for Figure 3)
+# ══════════════════════════════════════════════════════════════════════
+def _Em(mu, mmax):
+    E = np.zeros(mmax + 1)
+    pmf, cdfb, M = math.exp(-mu), 0.0, 0.0
+    for m in range(1, mmax + 1):
+        M += max(1.0 - (cdfb + pmf), 0.0)
+        E[m] = M
+        cdfb += pmf
+        pmf *= mu / m
+    return E
+
+
+def an_b1bar_general(I2, tau):
+    """b1bar of Eq. (36); np.nan means +infinity. Valid for any Cf >= 0."""
+    if I2 < 1 or tau <= 0:
+        return np.nan
+    E = _Em(lam2 * tau, I2)
+    d = lambda m: (h + pi2) / lam2 * E[m] - cu + (pi1 - pi2) * tau
+    S = 0.0
+    for b in range(1, I2 + 1):
+        dm = d(I2 - b + 1)
+        if dm <= 0:
+            return np.nan
+        S += dm
+        if S > Cf:
+            return float(b)
+    return np.nan
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  FIGURE 3:  b1bar vs I2 at exact tau values (DP full scan + analytic)
+# ══════════════════════════════════════════════════════════════════════
+fig3, ax3 = plt.subplots(figsize=(10, 5))
+cols3 = cm.tab10(np.linspace(0, 0.9, max(len(TAU_LIST_B1BAR), 2)))
+I2_axis = np.arange(1, I2_max + 1)
+for tv, col in zip(TAU_LIST_B1BAR, cols3):
+    n = n_for_tau(tv)
+    te = n * T / N                       # effective tau actually used by the DP
+    ys_dp3 = [dp_b1star(int(I2), tv) for I2 in I2_axis]
+    ax3.step(I2_axis, ys_dp3, where="mid", color=col, lw=2,
+             label=f"DP  tau={tv:g} (eff {te:.4g})")
+    ys_an3 = [an_b1bar_general(int(I2), te) for I2 in I2_axis]
+    ax3.step(I2_axis, ys_an3, where="mid", color=col, lw=1.4, ls="--",
+             alpha=0.75, label=f"analytic eq.(36)  tau={te:.4g}")
+ax3.set_xlabel("I2", fontsize=11)
+ax3.set_ylabel("b1bar(I2, tau)", fontsize=11)
+ax3.set_title("Dispatch threshold vs I2 at exact tau\n"
+              "missing points = +infinity (dispatch never pays)   "
+              + title_params, fontsize=10)
+ax3.legend(fontsize=8, loc="best", framealpha=0.85)
+ax3.grid(True, alpha=0.3)
+fig3.tight_layout()
+fig3.savefig(SAVE_B1BAR, dpi=150)
+print(f"Saved {SAVE_B1BAR}")
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  FIGURE 4:  dispatch-vs-wait margin vs I2, plus a printed Q-table
+#  margin(I2) = Q(wait) - min_q Q(q), both under OPTIMAL continuation.
+#  >0: dispatching now is strictly cheaper. A dip below 0 between positive
+#  neighbours is a waiting pocket (the crease), measured in cost units.
+# ══════════════════════════════════════════════════════════════════════
+fig4, ax4 = plt.subplots(figsize=(10, 4.2))
+ax4.axhline(0, color="0.4", lw=0.8)
+for tv, col in zip(TAU_LIST_B1BAR, cols3):
+    n = n_for_tau(tv)
+    te = n * T / N
+    ms = [dp.wait_margin(n, int(I2), B1_FOR_MARGIN) for I2 in I2_axis]
+    ax4.plot(I2_axis, ms, marker="o", ms=3, lw=1.6, color=col,
+             label=f"tau={tv:g} (eff {te:.4g})")
+ax4.set_xlabel("I2", fontsize=11)
+ax4.set_ylabel("Q(wait) - best dispatch", fontsize=11)
+ax4.set_title(f"Dispatch-vs-wait margin at b1={B1_FOR_MARGIN}   "
+              f"(>0: dispatch region)\n{title_params}", fontsize=10)
+ax4.legend(fontsize=8, loc="best", framealpha=0.85)
+ax4.grid(True, alpha=0.3)
+fig4.tight_layout()
+fig4.savefig(SAVE_MARGIN, dpi=150)
+print(f"Saved {SAVE_MARGIN}")
+
+
+# ── printed action values at one state ────────────────────────────────
+qI2, qb1, qtau = STATE_FOR_Q
+nq = n_for_tau(qtau)
+print(f"\nAction values at (I2={qI2}, b1={qb1}, tau_eff={nq*T/N:.4g}):")
+for q, v in dp.action_values(nq, qI2, qb1):
+    tag = "wait    " if q == 0 else f"q = {q}   "
+    print(f"   {tag}Q = {v:12.4f}")
+mg = dp.wait_margin(nq, qI2, qb1)
+print(f"   margin Q(wait) - best dispatch = {mg:+.4f}  "
+      f"({'dispatch' if mg > 0 else 'wait'} is strictly cheaper)")
+
 
 plt.show()
