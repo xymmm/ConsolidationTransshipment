@@ -1166,6 +1166,26 @@ def _an_q_exact(I2, b1, tau):
     return qc if S > Cf else 0
 
 
+
+
+def _q_shade(vmax):
+    """Cell background scaling with q: white for wait, light->deep blue for q."""
+    def f(v):
+        try:
+            q = int(v)
+        except (TypeError, ValueError):
+            return ""                      # '·' or 'a/b' cells
+        if q <= 0 or vmax <= 0:
+            return ""
+        x = min(q / vmax, 1.0)
+        # interpolate white -> steel blue
+        r = int(255 - x * (255 - 70))
+        g = int(255 - x * (255 - 130))
+        b = int(255 - x * (255 - 180))
+        fg = "#FFFFFF" if x > 0.55 else "#1B2631"
+        return f"background-color:rgb({r},{g},{b});color:{fg}"
+    return f
+
 # ======================================================================
 # TAB 4: POLICY TABLE — the roadmap: full q*(I2, b1) at a chosen tau
 # ======================================================================
@@ -1201,6 +1221,13 @@ with tab_pol:
 
         I2rows = list(range(1, p.I2_max + 1))
         b1cols = list(range(1, int(b1_show) + 1))
+        st.markdown("**rows = I₂ (Retailer-2 inventory) · "
+                    "columns = b₁ (Retailer-1 backlog)**")
+
+        def _label(df):
+            df.index.name = "I₂ \\ b₁"
+            df.columns.name = "b₁"
+            return df
 
         if view_mode == "wait margin":
             if dp.V_all is None:
@@ -1209,7 +1236,8 @@ with tab_pol:
             else:
                 data = [[round(dp.wait_margin(n, I2, b1), 3)
                          for b1 in b1cols] for I2 in I2rows]
-                df = pd.DataFrame(data, index=I2rows, columns=b1cols)
+                df = _label(pd.DataFrame(data, index=I2rows,
+                                         columns=b1cols))
                 st.caption("Q(wait) − best dispatch. Positive = dispatch "
                            "region. A negative pocket between positive "
                            "neighbours is the crease.")
@@ -1223,10 +1251,13 @@ with tab_pol:
             qs = [[dp.get_policy(n, I2, b1) for b1 in b1cols]
                   for I2 in I2rows]
             if view_mode == "q*":
-                df = pd.DataFrame(
+                df = _label(pd.DataFrame(
                     [["·" if q == 0 else str(q) for q in row] for row in qs],
-                    index=I2rows, columns=b1cols)
-                st.dataframe(df, height=560)
+                    index=I2rows, columns=b1cols))
+                vmax = max((max(r) for r in qs), default=0)
+                st.dataframe(df.style.map(_q_shade(vmax)), height=560)
+                st.caption("cell shade scales with q*: white = wait, "
+                           "deeper blue = larger dispatch")
             else:
                 cells, marks = [], []
                 for I2, row in zip(I2rows, qs):
@@ -1240,14 +1271,20 @@ with tab_pol:
                             crow.append(f"{qd if qd else '·'}/{qa if qa else '·'}")
                             mrow.append(True)
                     cells.append(crow); marks.append(mrow)
-                df = pd.DataFrame(cells, index=I2rows, columns=b1cols)
+                df = _label(pd.DataFrame(cells, index=I2rows,
+                                         columns=b1cols))
                 mk = pd.DataFrame(marks, index=I2rows, columns=b1cols)
                 st.caption("cell = DP/analytic where they differ (orange); "
-                           "a single number where they agree. '·' = wait.")
+                           "a single number where they agree, shaded by q*. "
+                           "'·' = wait.")
+                vmax = max((max(r) for r in qs), default=0)
+                shade = _q_shade(vmax)
                 st.dataframe(
                     df.style.apply(
-                        lambda col: ["background-color:#FDEBD0" if m else ""
-                                     for m in mk[col.name]], axis=0),
+                        lambda col: ["background-color:#F5B041"
+                                     if m else shade(v)
+                                     for m, v in zip(mk[col.name], col)],
+                        axis=0),
                     height=560)
                 ndis = int(mk.values.sum())
                 st.caption(f"disagreements in this slice: {ndis} "
