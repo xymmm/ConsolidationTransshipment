@@ -869,7 +869,7 @@ with tab_2d:
         ax.legend(fontsize=8, loc='best', framealpha=0.85)
         ax.grid(True, alpha=0.3)
 
-        st.pyplot(fig)
+        st.pyplot(fig, use_container_width=False)
         plt.close(fig)
 
         with st.expander("Parameters used in current solve"):
@@ -1066,7 +1066,7 @@ with tab_q:
                           "(missing points = b̄₁ = +∞, dispatch never pays)",
                           fontsize=10)
             axq.legend(fontsize=8); axq.grid(True, alpha=0.3)
-            st.pyplot(figq); plt.close(figq)
+            st.pyplot(figq, use_container_width=False); plt.close(figq)
 
         st.markdown("---")
         st.subheader("Action values: dispatch vs wait at one state")
@@ -1111,7 +1111,7 @@ with tab_q:
             axb.set_xlabel("action q"); axb.set_ylabel("Q(q)")
             axb.set_title(f"Action values at (I₂={int(I2_q)}, b₁={int(b1_q)}, "
                           f"τ_eff={te:.4g})   red = optimal", fontsize=10)
-            st.pyplot(figb); plt.close(figb)
+            st.pyplot(figb, use_container_width=False); plt.close(figb)
             m = dp.wait_margin(n, int(I2_q), int(b1_q))
             if np.isnan(m):
                 st.info("No dispatch action is feasible at this state.")
@@ -1178,7 +1178,7 @@ with tab_q:
             axm.set_title(ttl + "   (>0: dispatch now is cheaper; "
                           "orange band: waiting is cheaper)", fontsize=10)
             axm.grid(True, alpha=0.3)
-            st.pyplot(figm); plt.close(figm)
+            st.pyplot(figm, use_container_width=False); plt.close(figm)
             if runs:
                 spans = ", ".join(
                     f"{xlabel}∈[{xsm[s0]:.4g}, {xsm[s1]:.4g}]"
@@ -1583,7 +1583,7 @@ with tab_sim:
         axc.set_xlabel("t"); axc.set_ylabel("cumulative cost")
         axc.legend(fontsize=8); axc.grid(True, alpha=0.25)
         figt.tight_layout()
-        st.pyplot(figt); plt.close(figt)
+        st.pyplot(figt, use_container_width=False); plt.close(figt)
 
         # ── full event table ──────────────────────────────────────
         with st.expander("Event table — every decision, including waits"):
