@@ -1122,22 +1122,72 @@ with tab_q:
                 st.info(f"Q(wait) − best dispatch = **{m:.4f}** → "
                         f"waiting is strictly cheaper.")
 
-            st.markdown("**Margin curve** — the same quantity as a function "
-                        "of I₂ at this b₁ and τ. A dip below zero is a "
-                        "waiting pocket; this is the crease, measured in "
-                        "money.")
-            xsm = np.arange(1, p.I2_max + 1)
-            ms = [dp.wait_margin(n, int(x), int(b1_q)) for x in xsm]
-            figm, axm = plt.subplots(figsize=(10, 3.8))
-            axm.axhline(0, color="0.4", lw=0.8)
-            axm.plot(xsm, ms, marker="o", ms=3.5, lw=1.6, color="#1F618D")
-            axm.set_xlabel("I₂")
+            st.markdown("**Dispatch-vs-wait margin.** Q(wait) − best "
+                        "dispatch, at this b₁ and τ. Positive means "
+                        "dispatching now is cheaper. **A dip below zero "
+                        "between positive neighbours is the crease: there "
+                        "waiting is strictly cheaper, so b̄₁ steps up.** "
+                        "Sweep along I₂ or along τ.")
+            sweep = st.radio("sweep along", ["I₂ (fixed τ)", "τ (fixed I₂)"],
+                             horizontal=True, key="insp_sweep")
+
+            if sweep.startswith("I₂"):
+                xsm = np.arange(1, p.I2_max + 1)
+                ms = np.array([dp.wait_margin(n, int(x), int(b1_q))
+                               for x in xsm], dtype=float)
+                xlabel = "I₂"
+                ttl = (f"margin vs I₂ at b₁={int(b1_q)}, τ_eff={te:.4g}")
+            else:
+                ns = np.unique(np.linspace(1, p.N, 160).astype(int))
+                xsm = ns * p.T / p.N
+                ms = np.array([dp.wait_margin(int(nn), int(I2_q), int(b1_q))
+                               for nn in ns], dtype=float)
+                xlabel = "τ"
+                ttl = (f"margin vs τ at I₂={int(I2_q)}, b₁={int(b1_q)}")
+
+            figm, axm = plt.subplots(figsize=(10, 3.9))
+            axm.axhline(0, color="0.35", lw=1.0)
+            axm.plot(xsm, ms, marker="o", ms=3.2, lw=1.6, color="#1F618D",
+                     zorder=3)
+            # highlight every contiguous run where waiting wins
+            neg = np.isfinite(ms) & (ms < 0)
+            runs, i0 = [], None
+            for k, v in enumerate(neg):
+                if v and i0 is None:
+                    i0 = k
+                elif not v and i0 is not None:
+                    runs.append((i0, k - 1)); i0 = None
+            if i0 is not None:
+                runs.append((i0, len(neg) - 1))
+            for (s0, s1) in runs:
+                lo = xsm[s0] - (xsm[1] - xsm[0]) * 0.5 if s0 > 0 else xsm[0]
+                hi = xsm[s1] + (xsm[1] - xsm[0]) * 0.5 \
+                    if s1 < len(xsm) - 1 else xsm[-1]
+                axm.axvspan(lo, hi, color="#F5B041", alpha=0.30, zorder=1)
+                kmin = s0 + int(np.argmin(ms[s0:s1 + 1]))
+                axm.annotate(f"wait wins by {abs(ms[kmin]):.3f}",
+                             xy=(xsm[kmin], ms[kmin]),
+                             xytext=(0, -22), textcoords="offset points",
+                             ha="center", fontsize=8, color="#7E5109",
+                             arrowprops=dict(arrowstyle="->", lw=0.9,
+                                             color="#7E5109"))
+            axm.fill_between(xsm, 0, ms, where=np.isfinite(ms) & (ms >= 0),
+                             color="#1F618D", alpha=0.10, zorder=0)
+            axm.set_xlabel(xlabel)
             axm.set_ylabel("Q(wait) − best dispatch")
-            axm.set_title(f"Dispatch-vs-wait margin at b₁={int(b1_q)}, "
-                          f"τ_eff={te:.4g}   (>0: dispatch region)",
-                          fontsize=10)
+            axm.set_title(ttl + "   (>0: dispatch now is cheaper; "
+                          "orange band: waiting is cheaper)", fontsize=10)
             axm.grid(True, alpha=0.3)
             st.pyplot(figm); plt.close(figm)
+            if runs:
+                spans = ", ".join(
+                    f"{xlabel}∈[{xsm[s0]:.4g}, {xsm[s1]:.4g}]"
+                    for s0, s1 in runs)
+                st.warning(f"Waiting is strictly cheaper on {spans}. "
+                           f"These are the crease cells: b̄₁ steps up here "
+                           f"even though the neighbours dispatch.")
+            else:
+                st.caption("No waiting pocket on this sweep.")
 
 
 # ======================================================================

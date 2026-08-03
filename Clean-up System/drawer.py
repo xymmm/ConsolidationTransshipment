@@ -285,25 +285,83 @@ print(f"Saved {SAVE_B1BAR}")
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  FIGURE 4:  dispatch-vs-wait margin vs I2, plus a printed Q-table
-#  margin(I2) = Q(wait) - min_q Q(q), both under OPTIMAL continuation.
+#  FIGURE 4:  dispatch-vs-wait margin, two sweeps
+#  margin = Q(wait) - min_q Q(q), both under OPTIMAL continuation.
 #  >0: dispatching now is strictly cheaper. A dip below 0 between positive
-#  neighbours is a waiting pocket (the crease), measured in cost units.
+#  neighbours is a waiting pocket: the crease, measured in cost units.
+#  Orange bands mark every stretch where waiting is strictly cheaper.
 # ══════════════════════════════════════════════════════════════════════
-fig4, ax4 = plt.subplots(figsize=(10, 4.2))
-ax4.axhline(0, color="0.4", lw=0.8)
+def _shade_negatives(ax, xs, ms, label_fmt="wait wins by {:.3f}"):
+    ms = np.asarray(ms, dtype=float)
+    neg = np.isfinite(ms) & (ms < 0)
+    runs, i0 = [], None
+    for k, v in enumerate(neg):
+        if v and i0 is None:
+            i0 = k
+        elif not v and i0 is not None:
+            runs.append((i0, k - 1)); i0 = None
+    if i0 is not None:
+        runs.append((i0, len(neg) - 1))
+    step = (xs[1] - xs[0]) if len(xs) > 1 else 1.0
+    for (s0, s1) in runs:
+        ax.axvspan(xs[s0] - 0.5 * step, xs[s1] + 0.5 * step,
+                   color="#F5B041", alpha=0.30, zorder=1)
+        kmin = s0 + int(np.nanargmin(ms[s0:s1 + 1]))
+        ax.annotate(label_fmt.format(abs(ms[kmin])),
+                    xy=(xs[kmin], ms[kmin]), xytext=(0, -24),
+                    textcoords="offset points", ha="center", fontsize=8,
+                    color="#7E5109",
+                    arrowprops=dict(arrowstyle="->", lw=0.9, color="#7E5109"))
+    return runs
+
+
+fig4, (ax4a, ax4b) = plt.subplots(2, 1, figsize=(10, 7))
+
+# (a) sweep along I2 at fixed b1, one line per tau
+I2_axis = np.arange(1, I2_max + 1)
+ax4a.axhline(0, color="0.35", lw=1.0)
 for tv, col in zip(TAU_LIST_B1BAR, cols3):
     n = n_for_tau(tv)
     te = n * T / N
     ms = [dp.wait_margin(n, int(I2), B1_FOR_MARGIN) for I2 in I2_axis]
-    ax4.plot(I2_axis, ms, marker="o", ms=3, lw=1.6, color=col,
-             label=f"tau={tv:g} (eff {te:.4g})")
-ax4.set_xlabel("I2", fontsize=11)
-ax4.set_ylabel("Q(wait) - best dispatch", fontsize=11)
-ax4.set_title(f"Dispatch-vs-wait margin at b1={B1_FOR_MARGIN}   "
-              f"(>0: dispatch region)\n{title_params}", fontsize=10)
-ax4.legend(fontsize=8, loc="best", framealpha=0.85)
-ax4.grid(True, alpha=0.3)
+    ax4a.plot(I2_axis, ms, marker="o", ms=3, lw=1.6, color=col,
+              label=f"tau={tv:g} (eff {te:.4g})", zorder=3)
+    if abs(tv - TAU_LIST_B1BAR[-1]) < 1e-12:
+        runs = _shade_negatives(ax4a, I2_axis, ms)
+        if runs:
+            print("\nWaiting pockets along I2 at "
+                  f"b1={B1_FOR_MARGIN}, tau={tv:g}:")
+            for s0, s1 in runs:
+                print(f"   I2 in [{I2_axis[s0]}, {I2_axis[s1]}]: "
+                      f"waiting cheaper by up to "
+                      f"{abs(min(ms[s0:s1+1])):.4f}")
+ax4a.set_xlabel("I2", fontsize=11)
+ax4a.set_ylabel("Q(wait) - best dispatch", fontsize=11)
+ax4a.set_title(f"(a) margin vs I2 at b1={B1_FOR_MARGIN}   "
+               "(>0: dispatch now is cheaper; orange: waiting is cheaper)",
+               fontsize=10)
+ax4a.legend(fontsize=8, loc="best", framealpha=0.85)
+ax4a.grid(True, alpha=0.3)
+
+# (b) sweep along tau at the crease state
+qI2c, qb1c = STATE_FOR_Q[0], STATE_FOR_Q[1]
+ns = np.unique(np.linspace(1, N, 200).astype(int))
+tau_axis = ns * T / N
+msb = [dp.wait_margin(int(nn), qI2c, qb1c) for nn in ns]
+ax4b.axhline(0, color="0.35", lw=1.0)
+ax4b.plot(tau_axis, msb, lw=1.8, color="#1F618D", zorder=3)
+runs_b = _shade_negatives(ax4b, tau_axis, msb)
+ax4b.set_xlabel("tau", fontsize=11)
+ax4b.set_ylabel("Q(wait) - best dispatch", fontsize=11)
+ax4b.set_title(f"(b) margin vs tau at (I2={qI2c}, b1={qb1c})", fontsize=10)
+ax4b.grid(True, alpha=0.3)
+if runs_b:
+    print(f"\nWaiting pockets along tau at (I2={qI2c}, b1={qb1c}):")
+    for s0, s1 in runs_b:
+        print(f"   tau in [{tau_axis[s0]:.4g}, {tau_axis[s1]:.4g}]: "
+              f"waiting cheaper by up to {abs(min(msb[s0:s1+1])):.4f}")
+
+fig4.suptitle(title_params, fontsize=9)
 fig4.tight_layout()
 fig4.savefig(SAVE_MARGIN, dpi=150)
 print(f"Saved {SAVE_MARGIN}")
