@@ -56,6 +56,22 @@ def solve_cf0_2d(T_, N_, lam1_, lam2_, h_, cu_, pi1_, pi2_, c2_, v2_, taus_key):
     dp0.solve(verbose=False)
     return dp0.threshold_curve(np.array(taus_key))
 
+
+@st.cache_resource(show_spinner=False)
+def solve_cf0_2d_policy(T_, N_, lam1_, lam2_, h_, cu_, pi1_, pi2_, c2_, v2_):
+    """
+    The note's 2-D Cf=0 switching model, returned as a solved object so the
+    Simulation tab can query its policy. At Cf = 0 this, not solver.py, is
+    the right model: there is no b1 state, a rejected Retailer-1 demand is
+    charged pi1*tau once and is never served afterwards, and the flow cost
+    carries no pi1*b1 term.
+    """
+    p0 = ParamsCf0(T=T_, N=N_, lam1=lam1_, lam2=lam2_, h=h_, cu=cu_,
+                   pi1=pi1_, pi2=pi2_, c2=c2_, v2=v2_).with_auto_bounds()
+    dp0 = SwitchingDPCf0(p0)
+    dp0.solve(verbose=False)
+    return dp0
+
 # ======================================================================
 # PAGE CONFIG
 # ======================================================================
@@ -869,7 +885,7 @@ with tab_2d:
         ax.legend(fontsize=8, loc='best', framealpha=0.85)
         ax.grid(True, alpha=0.3)
 
-        st.pyplot(fig, use_container_width=False)
+        st.pyplot(fig)
         plt.close(fig)
 
         with st.expander("Parameters used in current solve"):
@@ -1066,7 +1082,7 @@ with tab_q:
                           "(missing points = b̄₁ = +∞, dispatch never pays)",
                           fontsize=10)
             axq.legend(fontsize=8); axq.grid(True, alpha=0.3)
-            st.pyplot(figq, use_container_width=False); plt.close(figq)
+            st.pyplot(figq); plt.close(figq)
 
         st.markdown("---")
         st.subheader("Action values: dispatch vs wait at one state")
@@ -1111,7 +1127,7 @@ with tab_q:
             axb.set_xlabel("action q"); axb.set_ylabel("Q(q)")
             axb.set_title(f"Action values at (I₂={int(I2_q)}, b₁={int(b1_q)}, "
                           f"τ_eff={te:.4g})   red = optimal", fontsize=10)
-            st.pyplot(figb, use_container_width=False); plt.close(figb)
+            st.pyplot(figb); plt.close(figb)
             m = dp.wait_margin(n, int(I2_q), int(b1_q))
             if np.isnan(m):
                 st.info("No dispatch action is feasible at this state.")
@@ -1178,7 +1194,7 @@ with tab_q:
             axm.set_title(ttl + "   (>0: dispatch now is cheaper; "
                           "orange band: waiting is cheaper)", fontsize=10)
             axm.grid(True, alpha=0.3)
-            st.pyplot(figm, use_container_width=False); plt.close(figm)
+            st.pyplot(figm); plt.close(figm)
             if runs:
                 spans = ", ".join(
                     f"{xlabel}∈[{xsm[s0]:.4g}, {xsm[s1]:.4g}]"
@@ -1384,13 +1400,26 @@ with tab_sim:
         st.info("👈  Set parameters and press **Solve DP** first.")
     else:
         p = dp.p
+        IS_CF0 = (float(Cf) == 0.0)
         st.subheader("Sample paths under the optimal policy")
-        st.caption(
-            "Exogenous Poisson arrivals push the system along; at every "
-            "event the DP looks up the Policy Table and acts. Costs are "
-            "integrated exactly in continuous time. Tick the overlay to run "
-            "the analytic policy of Eq. (34)+(36) on the SAME arrivals."
-        )
+        if IS_CF0:
+            st.caption(
+                "**Cf = 0: the 2-D switching model of the note is simulated "
+                "here, solved by solver_cf0_2d.py.** That model has no b\u2081 "
+                "state: a Retailer-1 demand is either served on arrival at "
+                "cost c\u1d64, or rejected and charged \u03c0\u2081\u03c4 once, "
+                "never to be served. Dispatch is therefore always one unit at "
+                "a time and the flow cost carries no \u03c0\u2081b\u2081 term. "
+                "The overlay is the analytic staircase of Eq. (20)-(22)."
+            )
+        else:
+            st.caption(
+                "Exogenous Poisson arrivals push the system along; at every "
+                "event the DP looks up the Policy Table and acts. Costs are "
+                "integrated exactly in continuous time. Tick the overlay to "
+                "run the analytic policy of Eq. (34)+(36) on the SAME "
+                "arrivals."
+            )
         cs1, cs2, cs3, cs4 = st.columns(4)
         with cs1:
             seed0 = st.number_input("seed", min_value=0, value=42,
@@ -1403,9 +1432,13 @@ with tab_sim:
                                  max_value=int(p.I2_max),
                                  value=min(30, p.I2_max), key="sim_i0")
         with cs4:
-            b0 = st.number_input("start b₁", min_value=0,
-                                 max_value=int(p.b1_max),
-                                 value=min(2, p.b1_max), key="sim_b0")
+            if IS_CF0:
+                b0 = 0
+                st.caption("start b₁ — not a state when Cf = 0")
+            else:
+                b0 = st.number_input("start b₁", min_value=0,
+                                     max_value=int(p.b1_max),
+                                     value=min(2, p.b1_max), key="sim_b0")
         show_an = st.checkbox("Overlay analytic policy on the same arrivals",
                               value=False, key="sim_an")
 
@@ -1417,6 +1450,98 @@ with tab_sim:
             n = int(np.clip(round(tau / dtp), 1, p.N))
             q = dp.get_policy(n, I2, b1)
             return min(q, min(I2, b1)) if q > 0 else 0
+
+        if IS_CF0:
+            dp2d = solve_cf0_2d_policy(p.T, max(int(p.N), 2000), lam1, lam2,
+                                       h, cu, pi1, pi2, 0.0, 0.0)
+
+            def _stair_thr(tau):
+                """Analytic threshold of Eq. (20)-(22) at exact tau."""
+                if tau <= 0:
+                    return np.inf
+                lvl = lam2 * (cu + (pi2 - pi1) * tau) / (h + pi2)
+                if lvl <= 0:
+                    return 1.0
+                mu = lam2 * tau
+                if lvl > mu:
+                    return np.inf
+                tot, pmf, cdf = 0.0, math.exp(-mu), math.exp(-mu)
+                for m in range(1, 400):
+                    tot += 1.0 - cdf
+                    if tot >= lvl:
+                        return float(m)
+                    pmf *= mu / m
+                    cdf += pmf
+                return np.inf
+
+        def run_path_cf0(seed):
+            """
+            Simulate the 2-D switching model. State is I2 alone. A Retailer-1
+            arrival is served (cost cu, I2 falls by one) or rejected (cost
+            pi1*tau once, I2 unchanged, never served later). Flow cost is
+            h*I2+ + pi2*I2- only. The b1 line shown is the cumulative count of
+            rejected Retailer-1 demands: a display quantity, not a state.
+            """
+            trng = np.random.default_rng(int(seed))
+            n1 = trng.poisson(lam1 * p.T)
+            n2 = trng.poisson(lam2 * p.T)
+            ev = sorted([(t, "R1") for t in np.sort(trng.random(n1)) * p.T]
+                        + [(t, "R2") for t in np.sort(trng.random(n2)) * p.T])
+            pols = ["DP"] + (["AN"] if show_an else [])
+            S = {k: dict(I2=int(I0), b1=0, flow=0.0, disp=0.0, nCf=0)
+                 for k in pols}
+            traj = {k: [(0.0, S[k]["I2"], 0)] for k in pols}
+            ships = {k: [] for k in pols}
+            rows = []
+
+            def serve(k, tau):
+                """Return 1 if this policy serves the arriving R1 demand."""
+                s = S[k]
+                if s["I2"] < 1:
+                    return 0
+                if k == "DP":
+                    n = int(np.clip(round(tau / (p.T / dp2d.p.N)),
+                                    1, dp2d.p.N))
+                    return int(dp2d.get_policy(n, int(s["I2"])))
+                return int(s["I2"] >= _stair_thr(tau))
+
+            t = 0.0
+            for te_, kind in ev:
+                for k in pols:
+                    s = S[k]
+                    s["flow"] += (te_ - t) * (h * max(s["I2"], 0)
+                                              + pi2 * max(-s["I2"], 0))
+                t = te_
+                tau = p.T - t
+                pre = {k: (S[k]["I2"], S[k]["b1"]) for k in pols}
+                act = {}
+                for k in pols:
+                    s = S[k]
+                    if kind == "R2":
+                        s["I2"] -= 1
+                        act[k] = "R2 demand"
+                    else:
+                        q = serve(k, tau)
+                        if q:
+                            s["disp"] += cu
+                            s["nCf"] += 1
+                            s["I2"] -= 1
+                            ships[k].append((t, 1))
+                            act[k] = "serve q=1"
+                        else:
+                            s["flow"] += pi1 * tau      # one-off rejection
+                            s["b1"] += 1                # display only
+                            act[k] = f"reject (+{pi1 * tau:.2f})"
+                    traj[k].append((t, s["I2"], s["b1"]))
+                rows.append(dict(
+                    t=round(t, 4), tau=round(tau, 4), ev=kind,
+                    **{f"{k}_state": f"(I₂={pre[k][0]})" for k in pols},
+                    **{f"{k}_act": act[k] for k in pols}))
+            for k in pols:
+                s = S[k]
+                s["flow"] += (p.T - t) * (h * max(s["I2"], 0)
+                                          + pi2 * max(-s["I2"], 0))
+            return traj, ships, rows, S
 
         def run_path(seed):
             trng = np.random.default_rng(int(seed))
@@ -1493,15 +1618,17 @@ with tab_sim:
                                           + pi2 * max(-s["I2"], 0))
             return traj, ships, rows, S
 
-        results = [run_path(int(seed0) + i) for i in range(int(npaths))]
+        _runner = run_path_cf0 if IS_CF0 else run_path
+        results = [_runner(int(seed0) + i) for i in range(int(npaths))]
 
         # ── summary table ─────────────────────────────────────────
         summ = []
         for i, (_, ships, _, S) in enumerate(results):
             row = dict(path=i + 1, seed=int(seed0) + i,
                        DP_cost=round(S["DP"]["flow"] + S["DP"]["disp"], 2),
-                       DP_dispatches=S["DP"]["nCf"],
-                       DP_fixed=round(S["DP"]["nCf"] * Cf, 1))
+                       DP_dispatches=S["DP"]["nCf"])
+            if not IS_CF0:
+                row["DP_fixed"] = round(S["DP"]["nCf"] * Cf, 1)
             if show_an:
                 row.update(AN_cost=round(S["AN"]["flow"] + S["AN"]["disp"], 2),
                            AN_dispatches=S["AN"]["nCf"],
@@ -1583,7 +1710,7 @@ with tab_sim:
         axc.set_xlabel("t"); axc.set_ylabel("cumulative cost")
         axc.legend(fontsize=8); axc.grid(True, alpha=0.25)
         figt.tight_layout()
-        st.pyplot(figt, use_container_width=False); plt.close(figt)
+        st.pyplot(figt); plt.close(figt)
 
         # ── full event table ──────────────────────────────────────
         with st.expander("Event table — every decision, including waits"):
