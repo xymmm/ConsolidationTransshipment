@@ -3,7 +3,7 @@
 An interactive web app for exploring the optimal dispatch policy in a two-location finite-horizon transshipment model. The app solves a backward-induction dynamic programme and lets you adjust model parameters in real time to see how the optimal policy changes.
 
 **Access the app directly in your browser:**
-> https://consolidationtransshipment-bceq7yuvreyj6jhnsckcvb.streamlit.app/
+> [https://consolidationtransshipment-bceq7yuvreyj6jhnsckcvb.streamlit.app/](https://consolidationtransshipment-2.streamlit.app/)
 
 ---
 
