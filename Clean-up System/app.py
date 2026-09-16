@@ -49,6 +49,21 @@ CHANGE LOG (Simulation display)
    interpolation drew slopes between events and the plot stopped at the last
    event, which made gaps in Retailer-2 arrivals hard to read. Display only:
    the simulated paths, costs, summary table and event table are unchanged.
+
+CHANGE LOG (monotone approximation)
+-----------------------------------
+10. New tab "Bump fill". The optimal table is modified so that b̄₁ becomes
+    non-increasing in I₂, either by filling the waiting gap with the best
+    dispatch under V* (operator M⁻) or by removing the dispatches below the
+    right-running maximum (operator M⁺). Only cells below the DP's own b̄₁
+    are filled, so truncation holes near b1_max are untouched. The modified
+    table is evaluated exactly and compared with the optimal one. New code
+    only: no existing function or tab is changed.
+11. The Bump fill tab reports how far the modification reaches (I₂ levels
+    and size of the threshold shift), warns when the violation is not a
+    one-unit ridge, shows τ-violations before and after, keeps the results of
+    both operators and prints plain-language conclusions with a comparison.
+    Same logic as the conclusions of solverApproximate.py.
 """
 
 import io
@@ -906,12 +921,156 @@ def b1bar_workbook_bytes(res):
     return buf.getvalue()
 
 
+
+# ======================================================================
+# MONOTONE APPROXIMATION OF THE SDP TABLE  (bump fill M- / bump removal M+)
+# ======================================================================
+# The optimal table is modified period by period so that b1bar becomes
+# non-increasing in I2, and the modified table is evaluated EXACTLY by backward
+# induction. The optimal table is re-evaluated in the same pass with the same
+# code, so V_mod - V_dp is a like-for-like suboptimality gap, and V_dp is
+# checked against the solver's own V*.
+
+
+def _mono_branch(p_, V, q, I2g, b1g, sh):
+    """Q-value of action q against next-stage values V (same convention as dispatch_margin)."""
+    cI = lambda x: np.clip(x, p_.I2_min, p_.I2_max) - p_.I2_min
+    cB = lambda x: np.clip(x, 0, p_.b1_max)
+    I2a = np.broadcast_to(I2g - q, sh)
+    b1a = np.broadcast_to(b1g - q, sh)
+    g = (p_.Cf if q > 0 else 0.0) + p_.cu * q + p_.dt * (
+        p_.h * np.maximum(0, I2a) + p_.pi1 * b1a
+        + p_.pi2 * np.maximum(0, -I2a))
+    return (g + p_.p0 * V[cI(I2a), cB(b1a)]
+              + p_.p1 * V[cI(I2a), cB(b1a + 1)]
+              + p_.p2 * V[cI(I2a - 1), cB(b1a)])
+
+
+def _mono_grids(p_):
+    I2v = np.arange(p_.I2_min, p_.I2_max + 1)
+    I2g = I2v[:, None]
+    b1g = np.arange(0, p_.b1_max + 1)[None, :]
+    sh = (len(I2v), p_.b1_max + 1)
+    return I2g, b1g, sh
+
+
+def _mono_best_dispatch(p_, V, I2g, b1g, sh):
+    """argmin_{q>=1} Q(q) and its value, per state. q=0 where no dispatch is feasible."""
+    best = np.full(sh, np.inf)
+    bq = np.zeros(sh, int)
+    for q in range(1, max(1, min(p_.I2_max, p_.b1_max)) + 1):
+        feas = (I2g >= q) & (b1g >= q)
+        if not feas.any():
+            break
+        val = np.where(feas, _mono_branch(p_, V, q, I2g, b1g, sh), np.inf)
+        better = val < best
+        best = np.where(better, val, best)
+        bq = np.where(better, q, bq)
+    return bq, best
+
+
+def _mono_bbar(D):
+    return np.where(D.any(axis=1), D.argmax(axis=1) + 1.0, np.inf)
+
+
+def mono_modify_policy(p_, pol_n, mode, Vprev, I2g, b1g, sh):
+    """
+    Apply a monotone operator to one period of the policy table.
+
+    fill   (M-): b1bar is replaced by its running minimum over I2, so the
+                 threshold becomes non-increasing in I2. Every waiting cell with
+                 b1 >= new threshold dispatches the best q under V*.
+    remove (M+): b1bar is replaced by its running maximum from the right, so the
+                 threshold becomes non-increasing in I2 from above. Every
+                 dispatching cell with b1 < new threshold waits.
+
+    Returns the modified table (full grid), the mask of changed cells on the
+    I2 >= 1, b1 >= 1 block, and b1bar before and after.
+    """
+    A = np.asarray(pol_n).astype(int).copy()
+    r0, r1 = 1 - p_.I2_min, p_.I2_max - p_.I2_min + 1
+    sub = A[r0:r1, 1:]                          # view: I2 = 1..I2_max, b1 >= 1
+    D = sub > 0
+    bb = _mono_bbar(D)
+    cols = np.arange(1, p_.b1_max + 1)[None, :]
+    if mode == "fill":
+        env = np.minimum.accumulate(bb)
+        # only the I2-direction gap below the DP's own threshold; waits above
+        # b1bar (e.g. truncation holes near b1_max) are left untouched
+        mask = (~D) & (cols >= env[:, None]) & (cols < bb[:, None])
+        if mask.any():
+            bq, _ = _mono_best_dispatch(p_, Vprev, I2g, b1g, sh)
+            sub[mask] = bq[r0:r1, 1:][mask]
+    else:
+        env = np.maximum.accumulate(bb[::-1])[::-1]
+        mask = D & (cols < env[:, None])
+        sub[mask] = 0
+    return A, mask, bb, _mono_bbar(sub > 0)
+
+
+def mono_eval_step(p_, V, A, I2g, b1g, sh):
+    out = np.empty(sh)
+    for q in np.unique(A):
+        m = A == q
+        out[m] = _mono_branch(p_, V, int(q), I2g, b1g, sh)[m]
+    return out
+
+
+def mono_evaluate_operator(dp_, mode, progress=None):
+    """
+    Exact finite-horizon evaluation of the optimal table and of the modified
+    table, run in the same backward pass with the same transition code, so the
+    gap V_mod - V_dp is free of convention mismatches.
+    """
+    p_ = dp_.p
+    if dp_.V_all is None:
+        raise ValueError("solve with store_V=True")
+    I2g, b1g, sh = _mono_grids(p_)
+    N_, K, B = p_.N, p_.I2_max, p_.b1_max
+    V_dp = np.asarray(dp_.V_all[0], float).copy()
+    V_md = V_dp.copy()
+    Vd = np.empty((N_ + 1,) + sh); Vm = np.empty((N_ + 1,) + sh)
+    Vd[0], Vm[0] = V_dp, V_md
+    changed = np.zeros((N_, K, B), bool)
+    qmod = np.zeros((N_, K, B), int)
+    bb_old = np.full((N_, K), np.inf); bb_new = np.full((N_, K), np.inf)
+    for n in range(1, N_ + 1):
+        pol = np.asarray(dp_.policy[n])
+        A, mask, b0, b1_ = mono_modify_policy(p_, pol, mode,
+                                         np.asarray(dp_.V_all[n - 1], float),
+                                         I2g, b1g, sh)
+        V_dp = mono_eval_step(p_, V_dp, pol, I2g, b1g, sh)
+        V_md = mono_eval_step(p_, V_md, A, I2g, b1g, sh)
+        Vd[n], Vm[n] = V_dp, V_md
+        changed[n - 1] = mask
+        qmod[n - 1] = A[1 - p_.I2_min:, 1:][:K]
+        bb_old[n - 1], bb_new[n - 1] = b0, b1_
+        if progress is not None and (n % 20 == 0 or n == N_):
+            progress.progress(n / N_, text=f"period {n} / {N_}")
+
+    # sanity: the evaluated optimal table must reproduce the solver's V*
+    check = np.nan
+    Va = dp_.V_all
+    try:
+        if len(Va) > N_ and np.shape(Va[N_]) == sh:
+            check = float(np.max(np.abs(Vd[N_] - np.asarray(Va[N_]))))
+        else:
+            r = [(i, b) for i in range(1, K + 1, max(1, K // 8))
+                 for b in range(0, B + 1, max(1, B // 8))]
+            check = max(abs(Vd[N_][i - p_.I2_min, b] - dp_.get_value(N_, i, b))
+                        for i, b in r)
+    except Exception:
+        pass
+    return dict(mode=mode, Vd=Vd, Vm=Vm, changed=changed, qmod=qmod,
+                bb_old=bb_old, bb_new=bb_new, check=check)
+
+
 # ======================================================================
 # TABS
 # ======================================================================
-tab_2d, tab_3d, tab_q, tab_pol, tab_sim, tab_b1 = st.tabs(
+tab_2d, tab_3d, tab_q, tab_pol, tab_sim, tab_b1, tab_mono = st.tabs(
     ["📈 2D Plots", "🧊 3D Plots", "🔍 Inspector", "🗺 Policy Table",
-     "🎬 Simulation", "📋 b̄₁ Table"])
+     "🎬 Simulation", "📋 b̄₁ Table", "🩹 Bump fill"])
 
 # ======================================================================
 # TAB 1: 2D PLOTS
@@ -2047,3 +2206,359 @@ with tab_b1:
                     key="b1tab_dl")
             except ImportError:
                 st.error("Excel export needs openpyxl: pip install openpyxl")
+
+
+# ======================================================================
+# TAB 7: BUMP FILL — monotone approximation and its exact cost gap
+# ======================================================================
+with tab_mono:
+    if dp is None:
+        st.info("👈  Set parameters and press **Solve DP** first.")
+    elif dp.V_all is None:
+        st.warning("Re-solve with store_V=True to evaluate policies.")
+    else:
+        p = dp.p
+        st.subheader("Monotone approximation of the optimal table")
+        st.caption(
+            "Each period of the optimal table is modified so that b̄₁(I₂, τ) "
+            "is non-increasing in I₂, and the modified table is evaluated "
+            "exactly by backward induction on the same grid. The gap "
+            "V_mod − V* is therefore the true expected extra cost of the "
+            "approximation, and it is never negative. By the performance "
+            "difference lemma it equals the expected sum, along the modified "
+            "policy's own path, of |Q(wait) − best dispatch| over the "
+            "modified cells it visits."
+        )
+        mode_lbl = st.radio(
+            "operator",
+            ["Fill M⁻: dispatch in the waiting gap (removes the bump)",
+             "Remove M⁺: wait below the right-running maximum"],
+            index=0, key="mono_mode")
+        mode = "fill" if mode_lbl.startswith("Fill") else "remove"
+        st.caption(
+            "M⁻ lowers b̄₁ at the bump to the running minimum over smaller I₂ "
+            "and dispatches the best q under V* there. M⁺ raises b̄₁ below "
+            "the bump to the maximum over larger I₂. Together they bracket "
+            "the optimal table from both sides. Only the I₂-direction gap is "
+            "changed: waits above the DP's own b̄₁, such as truncation holes "
+            "near b1_max, are left as they are."
+        )
+        mkey = (id(dp), mode)
+        if st.button("Evaluate approximation", type="primary",
+                     key="mono_go"):
+            bar = st.progress(0.0, text="starting")
+            store = st.session_state.setdefault("mono_res", {})
+            # keep results of the current DP only, one per operator
+            for k_old in [k for k in store if k[0] != id(dp)]:
+                del store[k_old]
+            store[mkey] = mono_evaluate_operator(dp, mode, progress=bar)
+            bar.empty()
+
+        store = st.session_state.get("mono_res", {})
+        if mkey not in store:
+            st.info("Press **Evaluate approximation**. It runs one backward "
+                    "pass for the optimal and the modified table. Evaluate "
+                    "both operators to get a comparison in the conclusions.")
+        else:
+            r = store[mkey]
+            Vd, Vm = r["Vd"], r["Vm"]
+            G = Vm - Vd
+            K, B, N_ = p.I2_max, p.b1_max, p.N
+            r0 = 1 - p.I2_min
+            if np.isfinite(r["check"]) and r["check"] > 1e-6:
+                st.error(f"Sanity check failed: re-evaluating the optimal "
+                         f"table differs from solver V* by {r['check']:.3g}. "
+                         f"The transition convention does not match "
+                         f"solver.py, so the gaps below are not reliable.")
+            elif np.isfinite(r["check"]):
+                st.success(f"Sanity check passed: re-evaluated optimal table "
+                           f"matches solver V* to {r['check']:.2e}.")
+            else:
+                st.warning("Sanity check could not be run on this solver "
+                           "object.")
+
+            viol_new = int((r["bb_new"][:, 1:] > r["bb_new"][:, :-1]).sum())
+            viol_old = int((r["bb_old"][:, 1:] > r["bb_old"][:, :-1]).sum())
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("modified cells (all τ)", int(r["changed"].sum()))
+            m2.metric("periods touched",
+                      int(r["changed"].any(axis=(1, 2)).sum()))
+            m3.metric("I₂ violations before → after",
+                      f"{viol_old} → {viol_new}")
+            m4.metric("min gap (should be ≥ 0)", f"{G.min():.2e}")
+
+            # ── reach of the modification ─────────────────────────
+            bo, bn = r["bb_old"], r["bb_new"]
+            moved = bo != bn
+            lv_shift = int(moved.sum(axis=1).max()) if moved.size else 0
+            both_f = moved & np.isfinite(bo) & np.isfinite(bn)
+            mx_shift = (float(np.abs(bn[both_f] - bo[both_f]).max())
+                        if both_f.any() else 0.0)
+            tau_v = lambda b: int(((b[1:] > b[:-1])
+                                   & np.isfinite(b[:-1])).sum())
+            tv_old, tv_new = tau_v(bo), tau_v(bn)
+            m5, m6, m7 = st.columns(3)
+            m5.metric("max I₂ levels shifted in one period", lv_shift)
+            m6.metric("max threshold shift", f"{mx_shift:.0f}")
+            m7.metric("τ violations before → after (not enforced)",
+                      f"{tv_old} → {tv_new}")
+            local = not (mx_shift > 1 or lv_shift > K / 2)
+            if int(r["changed"].sum()) == 0:
+                st.success("The optimal table is already monotone in I₂; "
+                           "nothing was changed.")
+            elif local:
+                st.info("The violation is a one-unit ridge, so this operator "
+                        "is a local smoothing of the optimal policy.")
+            else:
+                st.warning(
+                    "This is not a one-unit bump. The optimal threshold "
+                    "departs from monotonicity by more than one unit or over "
+                    "most of the I₂ range, so this operator rewrites a large "
+                    "part of the policy. Its loss measures a structural "
+                    "mismatch rather than the cost of smoothing a local "
+                    "ridge. This typically happens when π₁ > π₂.")
+
+            # ── start state and gap over τ ─────────────────────────
+            cs1, cs2, cs3 = st.columns(3)
+            with cs1:
+                I2s0 = st.number_input("state I₂", min_value=int(p.I2_min),
+                                       max_value=int(K),
+                                       value=min(30, int(K)), key="mono_i2")
+            with cs2:
+                b1s0 = st.number_input("state b₁", min_value=0,
+                                       max_value=int(B),
+                                       value=min(2, int(B)), key="mono_b1")
+            with cs3:
+                b1_cap = st.number_input(
+                    "b₁ cap for max-gap reporting", min_value=1,
+                    max_value=int(B), value=min(int(B), 40), key="mono_cap")
+            ii, bb = int(I2s0) - p.I2_min, int(b1s0)
+            taus_m = np.arange(0, N_ + 1) * p.T / N_
+            g_state = G[:, ii, bb]
+            v_state = Vd[:, ii, bb]
+            rel = np.where(np.abs(v_state) > 1e-9,
+                           100 * g_state / np.abs(v_state), np.nan)
+            st.markdown(
+                f"At τ = T from (I₂, b₁) = ({int(I2s0)}, {int(b1s0)}): "
+                f"V* = **{v_state[-1]:.4f}**, V_mod = **{Vm[-1, ii, bb]:.4f}**, "
+                f"gap = **{g_state[-1]:.4f}** "
+                f"({rel[-1]:.3f}% of V*).")
+
+            regG = G[:, r0:, :int(b1_cap) + 1]
+            regV = Vd[:, r0:, :int(b1_cap) + 1]
+            max_gap_tau = regG.reshape(N_ + 1, -1).max(axis=1)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                regR = np.where(np.abs(regV) > 1e-9,
+                                100 * regG / np.abs(regV), 0.0)
+            max_rel_tau = regR.reshape(N_ + 1, -1).max(axis=1)
+
+            figg, (ag1, ag2) = plt.subplots(1, 2, figsize=(12, 4))
+            ag1.plot(taus_m, g_state, color="#1F618D", lw=1.8,
+                     label=f"gap at ({int(I2s0)}, {int(b1s0)})")
+            ag1.plot(taus_m, max_gap_tau, color="#B03A2E", lw=1.2, ls="--",
+                     label=f"max gap, I₂ ≥ 1, b₁ ≤ {int(b1_cap)}")
+            ag1.set_xlabel("τ"); ag1.set_ylabel("V_mod − V*")
+            ag1.grid(True, alpha=0.3); ag1.legend(fontsize=8)
+            ag1.set_title("absolute gap", fontsize=10)
+            ag2.plot(taus_m, rel, color="#1F618D", lw=1.8,
+                     label=f"at ({int(I2s0)}, {int(b1s0)})")
+            ag2.plot(taus_m, max_rel_tau, color="#B03A2E", lw=1.2, ls="--",
+                     label="max over region")
+            ag2.set_xlabel("τ"); ag2.set_ylabel("% of V*")
+            ag2.grid(True, alpha=0.3); ag2.legend(fontsize=8)
+            ag2.set_title("relative gap", fontsize=10)
+            figg.tight_layout(); st.pyplot(figg); plt.close(figg)
+
+            # ── b̄₁ before and after ───────────────────────────────
+            figb2, (ab1, ab2) = plt.subplots(1, 2, figsize=(12, 4.2),
+                                             sharey=True)
+            cmap_m = plt.get_cmap("viridis").copy()
+            cmap_m.set_bad("#C8C8C8")
+            vmax_b = np.nanmax(np.where(np.isfinite(r["bb_old"]),
+                                        r["bb_old"], np.nan))
+            for axx, arr, ttl in ((ab1, r["bb_old"], "optimal b̄₁"),
+                                  (ab2, r["bb_new"], f"modified b̄₁ ({mode})")):
+                im = axx.imshow(np.ma.masked_invalid(
+                    np.where(np.isfinite(arr), arr, np.nan)),
+                    aspect="auto", origin="lower", cmap=cmap_m,
+                    interpolation="nearest", vmin=1, vmax=vmax_b,
+                    extent=[0.5, K + 0.5, taus_m[1], taus_m[-1]])
+                axx.set_title(ttl + ", grey = +∞", fontsize=10)
+                axx.set_xlabel("I₂")
+            ab1.set_ylabel("τ")
+            nn_c, ii_c = np.nonzero(r["changed"].any(axis=2))
+            if nn_c.size:
+                ab1.scatter(ii_c + 1, taus_m[nn_c + 1], s=4, color="crimson",
+                            marker=".", label="modified (I₂, τ)")
+                ab1.legend(fontsize=8, loc="upper right")
+            figb2.colorbar(im, ax=[ab1, ab2], label="b̄₁")
+            st.pyplot(figb2); plt.close(figb2)
+
+            # ── slice table ───────────────────────────────────────
+            cq1, cq2, cq3 = st.columns(3)
+            with cq1:
+                tau_m = st.number_input("τ for the slice",
+                                        min_value=float(p.T / N_),
+                                        max_value=float(p.T),
+                                        value=float(p.T), step=0.05,
+                                        format="%.4f", key="mono_tau")
+            with cq2:
+                b1_show_m = st.number_input("show b₁ up to", min_value=5,
+                                            max_value=int(B),
+                                            value=min(20, int(B)),
+                                            key="mono_b1show")
+            with cq3:
+                cell_m = st.selectbox("cell content",
+                                      ["modified q (orange = changed)",
+                                       "absolute gap", "relative gap %"],
+                                      key="mono_cell")
+            n_m = n_for_tau(float(tau_m), dp)
+            st.caption(f"effective τ = {n_m * p.T / N_:.4f} (n = {n_m})")
+            rows_m = list(range(1, K + 1))
+            cols_m = list(range(1, int(b1_show_m) + 1))
+            chg = r["changed"][n_m - 1][:, :int(b1_show_m)]
+            if cell_m.startswith("modified"):
+                qm = r["qmod"][n_m - 1][:, :int(b1_show_m)]
+                dfm = pd.DataFrame([["·" if q == 0 else str(q) for q in row]
+                                    for row in qm], index=rows_m,
+                                   columns=cols_m)
+                mkm = pd.DataFrame(chg, index=rows_m, columns=cols_m)
+                vmx = int(qm.max()) if qm.size else 0
+                shade_m = _q_shade(vmx)
+                st.dataframe(dfm.style.apply(
+                    lambda col: ["background-color:#F5B041" if m
+                                 else shade_m(v)
+                                 for m, v in zip(mkm[col.name], col)],
+                    axis=0), height=520)
+                st.caption(f"changed cells in this slice: {int(chg.sum())}")
+            else:
+                gs = G[n_m, r0:, 1:int(b1_show_m) + 1]
+                if cell_m.startswith("relative"):
+                    vs = Vd[n_m, r0:, 1:int(b1_show_m) + 1]
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        gs = np.where(np.abs(vs) > 1e-9,
+                                      100 * gs / np.abs(vs), np.nan)
+                dfg = pd.DataFrame(gs, index=rows_m, columns=cols_m)
+                st.dataframe(dfg.style.format("{:.4f}").background_gradient(
+                    cmap="Oranges", axis=None), height=520)
+
+            # ── export ───────────────────────────────────────────
+            nn_x, ii_x, bb_x = np.nonzero(r["changed"])
+            q_old = np.array([dp.get_policy(int(a) + 1, int(b) + 1, int(c) + 1)
+                              for a, b, c in zip(nn_x, ii_x, bb_x)], int)
+            cells_df = pd.DataFrame(dict(
+                n=nn_x + 1, tau=np.round((nn_x + 1) * p.T / N_, 6),
+                I2=ii_x + 1, b1=bb_x + 1, q_opt=q_old,
+                q_mod=r["qmod"][nn_x, ii_x, bb_x],
+                gap_here=G[nn_x + 1, ii_x + r0, bb_x + 1]))
+            by_tau = pd.DataFrame(dict(
+                n=np.arange(0, N_ + 1), tau=np.round(taus_m, 6),
+                modified_cells=np.r_[0, r["changed"].sum(axis=(1, 2))],
+                V_opt_state=v_state, V_mod_state=Vm[:, ii, bb],
+                gap_state=g_state, rel_gap_state_pct=rel,
+                max_gap_region=max_gap_tau,
+                max_rel_gap_region_pct=max_rel_tau))
+            n_last = N_
+            slice_gap = pd.DataFrame(
+                G[n_last, r0:, :int(b1_cap) + 1],
+                index=pd.Index(rows_m, name="I2"),
+                columns=[f"b1={j}" for j in range(0, int(b1_cap) + 1)])
+            info = pd.DataFrame([
+                ("operator", "M- fill" if mode == "fill" else "M+ remove"),
+                ("Cf", p.Cf), ("T", p.T), ("N", N_), ("lam1", p.lam1),
+                ("lam2", p.lam2), ("h", p.h), ("cu", p.cu), ("pi1", p.pi1),
+                ("pi2", p.pi2), ("I2_min", p.I2_min), ("I2_max", K),
+                ("b1_max", B), ("state", f"({int(I2s0)}, {int(b1s0)})"),
+                ("gap at tau=T", g_state[-1]),
+                ("rel gap at tau=T (%)", rel[-1]),
+                ("sanity check |V_eval - V*|", r["check"]),
+                ("modified cells", int(r["changed"].sum())),
+            ], columns=["item", "value"])
+            info["value"] = info["value"].astype(str)
+            try:
+                bufm = io.BytesIO()
+                with pd.ExcelWriter(bufm, engine="openpyxl") as xw:
+                    info.to_excel(xw, sheet_name="README", index=False)
+                    by_tau.to_excel(xw, sheet_name="gap_by_tau", index=False)
+                    cells_df.to_excel(xw, sheet_name="modified_cells",
+                                      index=False)
+                    slice_gap.to_excel(xw, sheet_name="gap_at_T")
+                st.download_button(
+                    "⬇  Download approximation results (Excel)",
+                    bufm.getvalue(),
+                    file_name=f"mono_{mode}_Cf{p.Cf:g}_N{N_}_T{p.T:g}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument."
+                         "spreadsheetml.sheet", key="mono_dl")
+            except ImportError:
+                st.error("Excel export needs openpyxl: pip install openpyxl")
+
+            # ── conclusions ───────────────────────────────────────
+            st.markdown("---")
+            st.subheader("Conclusions")
+            valid = np.isfinite(r["check"]) and r["check"] <= 1e-6
+            name = "fill M⁻" if mode == "fill" else "remove M⁺"
+            lines = []
+            lines.append(
+                "- **Validity:** " + (
+                    f"re-evaluated optimal table matches solver V* to "
+                    f"{r['check']:.1e}, so the gaps are exact."
+                    if valid else
+                    "the sanity check did not pass, so the gaps below are "
+                    "not reliable."))
+            if viol_old == 0:
+                lines.append("- **Optimal table:** b̄₁ is already "
+                             "non-increasing in I₂ at every τ, so no "
+                             "approximation is needed.")
+            else:
+                lines.append(
+                    f"- **Optimal table:** {viol_old} I₂-violations under the "
+                    f"solver's tie rule. Use the b̄₁ Table tab with both tie "
+                    f"rules to separate structural violations from ties.")
+            if int(r["changed"].sum()):
+                lines.append(
+                    f"- **{name}:** changed {int(r['changed'].sum())} cells. "
+                    f"Monotonicity in I₂ is "
+                    + ("established" if viol_new == 0 else
+                       f"not fully established ({viol_new} remain)")
+                    + f"; τ-violations go from {tv_old} to {tv_new}. "
+                    + ("It is a local smoothing of a one-unit ridge."
+                       if local else
+                       f"It moves b̄₁ at up to {lv_shift} I₂ levels by up "
+                       f"to {mx_shift:.0f} units, so it is a structural "
+                       f"change, not a local smoothing."))
+                regT = G[N_, r0:, :int(b1_cap) + 1]
+                wi, wb = np.unravel_index(int(np.argmax(regT)), regT.shape)
+                relT = (100 * regT[wi, wb] / abs(Vd[N_, r0 + wi, wb])
+                                   if abs(Vd[N_, r0 + wi, wb]) > 1e-9
+                                   else float("nan"))
+                lines.append(
+                    f"- **Cost:** from ({int(I2s0)}, {int(b1s0)}) at τ = T "
+                    f"the expected cost rises from {v_state[-1]:.4f} to "
+                    f"{Vm[N_, ii, bb]:.4f}, a loss of {g_state[-1]:.4f} "
+                    f"({rel[-1]:.3f}%). The worst state at τ = T is "
+                    f"({wi + 1}, {wb}) with a loss of {regT[wi, wb]:.4f} "
+                    f"({relT:.3f}%); over all τ the largest loss in the "
+                    f"region is {max_gap_tau.max():.4f} at "
+                    f"τ = {taus_m[int(np.argmax(max_gap_tau))]:.3f}.")
+            other = "remove" if mode == "fill" else "fill"
+            ro = store.get((id(dp), other))
+            if ro is not None and valid:
+                g_this = g_state[-1]
+                g_other = float(ro["Vm"][N_, ii, bb] - ro["Vd"][N_, ii, bb])
+                oname = "fill M⁻" if other == "fill" else "remove M⁺"
+                if abs(g_this - g_other) <= 1e-6:
+                    lines.append("- **Comparison:** both operators cost the "
+                                 "same at this state.")
+                else:
+                    better, worse = ((name, oname) if g_this < g_other
+                                     else (oname, name))
+                    lines.append(
+                        f"- **Comparison:** at ({int(I2s0)}, {int(b1s0)}) "
+                        f"{better} loses {min(g_this, g_other):.4f} and "
+                        f"{worse} loses {max(g_this, g_other):.4f}, so "
+                        f"{better} is the better monotone approximation of "
+                        f"the two for this instance.")
+            elif ro is None:
+                lines.append(f"- **Comparison:** evaluate {'remove M⁺' if other == 'remove' else 'fill M⁻'} "
+                             f"as well to compare the two operators.")
+            st.markdown("\n".join(lines))
