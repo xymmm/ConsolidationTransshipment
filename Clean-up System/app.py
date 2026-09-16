@@ -6,7 +6,7 @@ Run with:
 
 Requires solver.py and solver_cf0_2d.py in the same directory.
 Install dependencies:
-    pip install streamlit matplotlib numpy plotly scipy
+    pip install streamlit matplotlib numpy plotly scipy pandas openpyxl
 
 CHANGE LOG (b̄₁ 3-D surface)
 ---------------------------
@@ -29,8 +29,21 @@ produced a misleading surface for six reasons, all fixed here.
    uniform grid aliases that staircase into a single flat slab.
 6. The analytic threshold of Eq. (36) can be overlaid for direct comparison,
    and diagnostic counts are printed under the figure.
+
+CHANGE LOG (full b̄₁ table)
+--------------------------
+7. New tab "b̄₁ Table" computes the SDP b̄₁ at every period n = 1..N and every
+   I₂ = 1..I2_max, flags tie-decided cells and cells whose dispatch set in b₁
+   is not an upper set, and exports everything to a single Excel workbook.
+   The Cf regime is recorded in the workbook. When Cf = 0 the analytic b̄₁ of
+   Eq. (36) can only be 1 or +∞, so an extra sheet compares the boundary
+   Ī₂(τ) across the 3-D SDP, Eq. (36), Eq. (20)-(22) and the 2-D Cf=0 DP.
+8. The analytic overlays in the 3-D tab and the Inspector now read their
+   parameters from the solved model dp.p instead of the live sidebar, so
+   moving a slider after solving no longer desynchronises DP and analytic.
 """
 
+import io
 import math
 import numpy as np
 import pandas as pd
@@ -143,8 +156,8 @@ with st.sidebar.expander("🔍  Cf = 0 model comparison", expanded=False):
                                  options=[500, 1000, 2000, 4000, 8000],
                                  value=2000)
         st.caption(
-            "Applies to the 'Ī₂ threshold (Case 2)' plot only. These curves are "
-            "controlled here, not by any other toggle.\n\n"
+            "Applies to the 'Ī₂ threshold (Case 2)' plot and to the Cf=0 "
+            "comparison sheet of the b̄₁ Table export.\n\n"
             "The note solves a TWO-dimensional model with value function "
             "V(I₂, τ). Retailer-1 demand is either satisfied on arrival at cost "
             "cᵤ or rejected and charged π₁τ, and the resulting backlog is never "
@@ -436,6 +449,8 @@ if solve_btn:
                 c1=c1, c2=c2, v2=v2,
                 I2_max=I2_max, I2_min=I2_min, b1_max=b1_max,
             )
+            # a new solve invalidates any previously computed b̄₁ table
+            st.session_state.pop("b1tab", None)
         st.success("DP solved!")
     except AssertionError as e:
         # e.g. v2 > c2 violates the model assumption, or Delta t too large.
@@ -453,7 +468,7 @@ def n_for_tau(tau, dp):
 # ======================================================================
 def render_b1bar_surface(dp_, colorscale_):
     p_ = dp_.p
-    tau_star = cu / max(h + pi1, 1e-9)
+    tau_star = p_.cu / max(p_.h + p_.pi1, 1e-9)
 
     st.caption(
         "b̄₁(I₂, τ) is the smallest Retailer-1 backlog at which a dispatch "
@@ -463,11 +478,12 @@ def render_b1bar_surface(dp_, colorscale_):
         "as in Figure 2 of the note, and are NOT part of the surface."
     )
 
-    if not (c1 == 0.0 and c2 == 0.0 and v2 == 0.0):
+    if not (getattr(p_, "c1", 0.0) == 0.0 and getattr(p_, "c2", 0.0) == 0.0
+            and getattr(p_, "v2", 0.0) == 0.0):
         st.warning(
             "Figure 2 of the note assumes V(I₂, b₁, 0) = 0. Set c₁ = c₂ = v₂ = 0 "
-            "in the sidebar, otherwise the DP threshold is not comparable with "
-            "the analytic threshold of Eq. (36)."
+            "in the sidebar and re-solve, otherwise the DP threshold is not "
+            "comparable with the analytic threshold of Eq. (36)."
         )
 
     st.info(
@@ -537,7 +553,8 @@ def render_b1bar_surface(dp_, colorscale_):
             TIE[i, :] = tie
             if show_analytic:
                 Z_an[i, :] = b1bar_analytic_row(
-                    p_.I2_max, float(tv), lam2, h, pi1, pi2, cu, Cf)
+                    p_.I2_max, float(tv), p_.lam2, p_.h, p_.pi1, p_.pi2,
+                    p_.cu, p_.Cf)
 
     # +infinity and "finite but above the display cap" are different things
     inf_mask = np.isnan(Z_dp)
@@ -638,8 +655,8 @@ def render_b1bar_surface(dp_, colorscale_):
         margin=dict(l=0, r=0, t=60, b=0),
         title=dict(
             text="Dispatch threshold b̄₁(I₂, τ)<br>"
-                 f"<sub>λ₁={lam1}, λ₂={lam2}, h={h}, π₁={pi1}, π₂={pi2}, "
-                 f"Cf={Cf}, cᵤ={cu}, T={p_.T}, N={p_.N} · "
+                 f"<sub>λ₁={p_.lam1}, λ₂={p_.lam2}, h={p_.h}, π₁={p_.pi1}, "
+                 f"π₂={p_.pi2}, Cf={p_.Cf}, cᵤ={p_.cu}, T={p_.T}, N={p_.N} · "
                  f"grey floor dots = +∞</sub>",
             x=0.5,
         ),
@@ -714,10 +731,179 @@ def render_b1bar_surface(dp_, colorscale_):
 
 
 # ======================================================================
-# TABS:  2D PLOTS  /  3D PLOTS
+# FULL b̄₁ TABLE  (all n, all I₂) + Excel export
 # ======================================================================
-tab_2d, tab_3d, tab_q, tab_pol, tab_sim = st.tabs(
-    ["📈 2D Plots", "🧊 3D Plots", "🔍 Inspector", "🗺 Policy Table", "🎬 Simulation"])
+def b1bar_dp_full(dp_, prefer_dispatch, tol=1e-9, progress=None):
+    """
+    SDP b̄₁ for every period n = 1..N and every I₂ = 1..I2_max.
+
+    Returns three (N, I2_max) arrays:
+      B     b̄₁, NaN means +∞ (the b₁ scan always covers the full range)
+      TIE   the threshold at that cell is decided by an exact tie
+      HOLE  the dispatch set in b₁ is not an upper set, i.e. some b₁ above
+            b̄₁ waits; near b1_max this can be a truncation effect
+    """
+    p_ = dp_.p
+    N_, K = p_.N, p_.I2_max
+    B = np.full((N_, K), np.nan)
+    TIE = np.zeros((N_, K), bool)
+    HOLE = np.zeros((N_, K), bool)
+    lo = 1 - p_.I2_min
+    hi = p_.I2_max - p_.I2_min + 1
+    for n in range(1, N_ + 1):
+        M = dispatch_margin(dp_, n)
+        if M is None:
+            disp = dp_.policy[n][lo:hi, 1:] > 0
+            sub = None
+        else:
+            sub = M[lo:hi, 1:]
+            disp = sub >= -tol if prefer_dispatch else sub > tol
+        any_ = disp.any(axis=1)
+        first = disp.argmax(axis=1)
+        B[n - 1] = np.where(any_, (first + 1).astype(float), np.nan)
+        if sub is not None:
+            m_at = np.take_along_axis(sub, first[:, None], axis=1).ravel()
+            TIE[n - 1] = any_ & (np.abs(m_at) <= tol)
+        cols = np.arange(disp.shape[1])[None, :]
+        above = cols >= first[:, None]
+        HOLE[n - 1] = any_ & (above & ~disp).any(axis=1)
+        if progress is not None and (n % 20 == 0 or n == N_):
+            progress.progress(n / N_, text=f"period {n} / {N_}")
+    return B, TIE, HOLE
+
+
+def _note_I2bar_exact(p_, tau, nmax=400):
+    """Eq. (20)-(22) with the solved parameters, M(n,τ) >= g(τ). NaN = +∞."""
+    if tau <= 0:
+        return np.nan
+    g = p_.lam2 * (p_.cu + (p_.pi2 - p_.pi1) * tau) / max(p_.h + p_.pi2, 1e-9)
+    Em = _Emin_array(p_.lam2 * tau, nmax)
+    hit = np.where(Em[1:] >= g)[0]
+    return float(hit[0] + 1) if hit.size else np.nan
+
+
+def _first_col(mask):
+    """Smallest I₂ (1-based) where mask is True in each row, NaN if none."""
+    return np.where(mask.any(axis=1), mask.argmax(axis=1) + 1.0, np.nan)
+
+
+def compute_b1bar_tables(dp_, prefer_dispatch, n_cf0_, progress=None):
+    p_ = dp_.p
+    N_, K = p_.N, p_.I2_max
+    Cf_ = float(p_.Cf)
+    is_cf0 = Cf_ == 0.0
+    taus = np.arange(1, N_ + 1) * p_.T / N_
+    I2s = np.arange(1, K + 1)
+
+    B, TIE, HOLE = b1bar_dp_full(dp_, prefer_dispatch, progress=progress)
+    A = np.vstack([b1bar_analytic_row(K, float(t), p_.lam2, p_.h, p_.pi1,
+                                      p_.pi2, p_.cu, Cf_) for t in taus])
+
+    # wide sheet: rows = τ, columns = I₂, +∞ written as the text "inf"
+    wide = pd.DataFrame(B, index=pd.Index(np.round(taus, 6), name="tau"),
+                        columns=[f"I2={i}" for i in I2s])
+    wide_x = wide.astype(object).where(~wide.isna(), "inf")
+    wide_x.insert(0, "n", np.arange(1, N_ + 1))
+
+    # long sheet: one row per (n, I₂), numeric b̄₁ plus explicit flags
+    nn, ii = np.meshgrid(np.arange(1, N_ + 1), I2s, indexing="ij")
+    long = pd.DataFrame(dict(
+        n=nn.ravel(), tau=np.round(taus[nn.ravel() - 1], 6), I2=ii.ravel(),
+        b1bar_DP=B.ravel(), DP_is_inf=np.isnan(B).ravel(),
+        decided_by_tie=TIE.ravel(), dispatch_set_not_upper=HOLE.ravel(),
+        b1bar_analytic_eq36=A.ravel(), analytic_is_inf=np.isnan(A).ravel()))
+    long["DP_minus_analytic"] = long["b1bar_DP"] - long["b1bar_analytic_eq36"]
+
+    # per-period summary
+    fin = ~np.isnan(B)
+    viol_I2 = ((B[:, 1:] > B[:, :-1]) | (fin[:, :-1] & ~fin[:, 1:])).sum(axis=1)
+    fin_A = ~np.isnan(A)
+    row_max = np.max(np.where(fin, B, -np.inf), axis=1)
+    summary = pd.DataFrame(dict(
+        n=np.arange(1, N_ + 1), tau=np.round(taus, 6),
+        finite_cells=fin.sum(axis=1), inf_cells=(~fin).sum(axis=1),
+        tie_cells=TIE.sum(axis=1), not_upper_set_cells=HOLE.sum(axis=1),
+        monotonicity_violations_in_I2=viol_I2,
+        min_I2_with_finite_b1bar_DP=_first_col(fin),
+        min_I2_with_b1bar_eq1_DP=_first_col(B == 1),
+        max_finite_b1bar_DP=np.where(fin.any(axis=1), row_max, np.nan),
+        disagreements_with_eq36=((fin != fin_A) |
+                                 (fin & fin_A & (B != A))).sum(axis=1),
+    ))
+    if is_cf0:
+        summary["cells_not_in_{1,inf}"] = (fin & (B != 1)).sum(axis=1)
+
+    # Cf = 0 only: b̄₁ degenerates to {1, ∞}, so compare the boundaries Ī₂(τ)
+    cf0 = None
+    if is_cf0:
+        note = np.array([_note_I2bar_exact(p_, float(t)) for t in taus])
+        try:
+            two = np.asarray(solve_cf0_2d(
+                float(p_.T), int(n_cf0_), float(p_.lam1), float(p_.lam2),
+                float(p_.h), float(p_.cu), float(p_.pi1), float(p_.pi2),
+                float(getattr(p_, "c2", 0.0)), float(getattr(p_, "v2", 0.0)),
+                tuple(float(t) for t in taus)), dtype=float)
+        except Exception:
+            two = np.full(N_, np.nan)
+        cf0 = pd.DataFrame(dict(
+            n=np.arange(1, N_ + 1), tau=np.round(taus, 6),
+            I2bar_3D_DP_b1bar_eq1=_first_col(B == 1),
+            I2bar_eq36_strict=_first_col(A == 1),
+            I2bar_note_eq20_22=note,
+            I2bar_2D_Cf0_DP=two,
+        ))
+
+    readme = pd.DataFrame([
+        ("model", "solver.py 3-D SDP, V(I2, b1, tau)"),
+        ("Cf regime", "Cf = 0 (b1bar degenerates to {1, inf})" if is_cf0
+         else "Cf > 0"),
+        ("T", p_.T), ("N", N_), ("dt", p_.T / N_),
+        ("lam1", p_.lam1), ("lam2", p_.lam2), ("h", p_.h), ("Cf", Cf_),
+        ("cu", p_.cu), ("pi1", p_.pi1), ("pi2", p_.pi2),
+        ("c1", getattr(p_, "c1", "")), ("c2", getattr(p_, "c2", "")),
+        ("v2", getattr(p_, "v2", "")),
+        ("I2_min", p_.I2_min), ("I2_max", p_.I2_max), ("b1_max", p_.b1_max),
+        ("tau_star = cu/(h+pi1)", p_.cu / max(p_.h + p_.pi1, 1e-9)),
+        ("tie rule", "prefer dispatch" if prefer_dispatch
+         else "prefer wait (solver.py default)"),
+        ("definition", "b1bar = smallest b1 >= 1 at which the SDP dispatches, "
+                       "scanned over the full b1 range"),
+        ("inf", "'inf' in the wide sheet, NaN plus DP_is_inf=True in the long "
+                "sheet, means dispatch never pays at that (I2, tau)"),
+        ("dispatch_set_not_upper", "some b1 above b1bar waits; check whether "
+                                   "it sits near b1_max before reading it as "
+                                   "structural"),
+    ], columns=["item", "value"])
+    if is_cf0:
+        readme.loc[len(readme)] = (
+            "Cf0 sheet", "eq36 at Cf=0 uses delta > 0, eq20-22 uses M >= g; "
+                         "they differ only on exact ties")
+    readme["value"] = readme["value"].astype(str)
+
+    return dict(B=B, A=A, TIE=TIE, HOLE=HOLE, taus=taus, I2s=I2s,
+                wide=wide_x, long=long, summary=summary, cf0=cf0,
+                readme=readme, is_cf0=is_cf0, Cf=Cf_)
+
+
+def b1bar_workbook_bytes(res):
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        res["readme"].to_excel(xw, sheet_name="README", index=False)
+        res["wide"].to_excel(xw, sheet_name="b1bar_DP_wide")
+        res["long"].to_excel(xw, sheet_name="b1bar_long", index=False)
+        res["summary"].to_excel(xw, sheet_name="summary_by_tau", index=False)
+        if res["cf0"] is not None:
+            res["cf0"].to_excel(xw, sheet_name="Cf0_I2bar_compare",
+                                index=False)
+    return buf.getvalue()
+
+
+# ======================================================================
+# TABS
+# ======================================================================
+tab_2d, tab_3d, tab_q, tab_pol, tab_sim, tab_b1 = st.tabs(
+    ["📈 2D Plots", "🧊 3D Plots", "🔍 Inspector", "🗺 Policy Table",
+     "🎬 Simulation", "📋 b̄₁ Table"])
 
 # ======================================================================
 # TAB 1: 2D PLOTS
@@ -1014,8 +1200,8 @@ with tab_3d:
                 margin=dict(l=0, r=0, t=30, b=0),
                 title=dict(
                     text=f"{z_choice}  over  {xy_choice}<br>"
-                         f"<sub>λ₂={lam2}, cu={cu}, h={h}, Cf={Cf}, "
-                         f"π₁={pi1}, π₂={pi2}, T={T}</sub>",
+                         f"<sub>λ₂={p.lam2}, cu={p.cu}, h={p.h}, Cf={p.Cf}, "
+                         f"π₁={p.pi1}, π₂={p.pi2}, T={p.T}</sub>",
                     x=0.5,
                 ),
             )
@@ -1072,8 +1258,8 @@ with tab_q:
                 axq.step(xsI, ys, where="mid", color=col, lw=2,
                          label=f"DP  τ={tv:g} (eff {te:.4g})")
                 if show_an_i:
-                    ya = b1bar_analytic_row(p.I2_max, te, lam2, h, pi1, pi2,
-                                            cu, Cf)
+                    ya = b1bar_analytic_row(p.I2_max, te, p.lam2, p.h, p.pi1,
+                                            p.pi2, p.cu, p.Cf)
                     axq.step(xsI, ya, where="mid", color=col, lw=1.4,
                              ls="--", alpha=0.7,
                              label=f"analytic τ={te:.4g}")
@@ -1230,8 +1416,6 @@ def _an_q_exact(I2, b1, tau):
     qc = min(b1, Np)
     S = sum(d(I2 - i) for i in range(qc))
     return qc if S > Cf else 0
-
-
 
 
 def _q_shade(vmax):
@@ -1722,3 +1906,121 @@ with tab_sim:
                 "checked after every arrival."
             )
             st.dataframe(pd.DataFrame(rows), hide_index=True, height=420)
+
+
+# ======================================================================
+# TAB 6: FULL b̄₁ TABLE — every (n, I₂), with Excel export
+# ======================================================================
+with tab_b1:
+    if dp is None:
+        st.info("👈  Set parameters and press **Solve DP** first.")
+    else:
+        p = dp.p
+        is_cf0_b = float(p.Cf) == 0.0
+        st.subheader("SDP dispatch threshold b̄₁(I₂, τ) at every period")
+        if is_cf0_b:
+            st.info(
+                "Cf = 0. By Eq. (36) the analytic b̄₁ can only be 1 or +∞, so "
+                "the informative object is the boundary Ī₂(τ). The export "
+                "therefore adds a sheet comparing the 3-D SDP boundary, "
+                "Eq. (36), the note staircase of Eq. (20)-(22) and the 2-D "
+                "Cf=0 DP. The summary also counts SDP cells whose b̄₁ lies "
+                "outside {1, +∞}, which the 3-D model allows because a later "
+                "dispatch can still clear the backlog."
+            )
+        else:
+            st.caption(
+                f"Cf = {p.Cf:g}. The table is valid for this Cf only, since "
+                "Cf enters the trigger condition of Eq. (36). Compare "
+                "different Cf values by re-solving and exporting each one."
+            )
+
+        tie_b = st.radio(
+            "Tie-breaking",
+            ["Prefer dispatch", "Prefer wait (solver.py default)"],
+            index=0, horizontal=True, key="b1tab_tie")
+        prefer_b = tie_b.startswith("Prefer dispatch")
+        tab_key = (id(dp), prefer_b, int(n_cf0) if is_cf0_b else 0)
+
+        if dp.V_all is None:
+            st.warning("The DP was solved without store_V=True, so tie flags "
+                       "are unavailable and the policy array is used directly.")
+
+        if st.button("Compute full b̄₁ table", key="b1tab_go", type="primary"):
+            bar = st.progress(0.0, text="starting")
+            res_new = compute_b1bar_tables(dp, prefer_b, n_cf0, progress=bar)
+            bar.empty()
+            st.session_state.b1tab = (tab_key, res_new)
+
+        cached = st.session_state.get("b1tab")
+        if cached is None or cached[0] != tab_key:
+            st.info("Press **Compute full b̄₁ table**. The table is recomputed "
+                    "whenever the DP, the tie rule or the 2-D N changes.")
+        else:
+            res = cached[1]
+            B, taus, K = res["B"], res["taus"], p.I2_max
+            fin = ~np.isnan(B)
+
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("finite cells", int(fin.sum()))
+            m2.metric("+∞ cells", int((~fin).sum()))
+            m3.metric("tie-decided", int(res["TIE"].sum()))
+            m4.metric("non-upper-set", int(res["HOLE"].sum()))
+            m5.metric("≠ Eq. (36)",
+                      int(res["summary"]["disagreements_with_eq36"].sum()))
+            if res["is_cf0"]:
+                n_off = int(res["summary"]["cells_not_in_{1,inf}"].sum())
+                st.caption(f"SDP cells with b̄₁ outside {{1, +∞}}: {n_off}")
+
+            figh, axh = plt.subplots(figsize=(11, 5))
+            cmap_h = plt.get_cmap("viridis").copy()
+            cmap_h.set_bad("#C8C8C8")
+            im = axh.imshow(np.ma.masked_invalid(B), aspect="auto",
+                            origin="lower", cmap=cmap_h,
+                            interpolation="nearest",
+                            extent=[0.5, K + 0.5, taus[0], taus[-1]])
+            has_marks = False
+            r, c = np.nonzero(res["HOLE"])
+            if r.size:
+                axh.scatter(c + 1, taus[r], s=6, marker="x", color="crimson",
+                            label="dispatch set not an upper set in b₁")
+                has_marks = True
+            r, c = np.nonzero(res["TIE"])
+            if r.size:
+                axh.scatter(c + 1, taus[r], s=6, marker=".",
+                            color="darkorange", label="decided by exact tie")
+                has_marks = True
+            if has_marks:
+                axh.legend(fontsize=8, loc="upper right")
+            figh.colorbar(im, ax=axh, label="b̄₁ (SDP)")
+            axh.set_xlabel("I₂")
+            axh.set_ylabel("τ")
+            axh.set_title(f"SDP b̄₁, Cf = {res['Cf']:g}, grey = +∞",
+                          fontsize=10)
+            st.pyplot(figh)
+            plt.close(figh)
+
+            views = ["wide (τ × I₂)", "summary by τ", "long format"]
+            if res["is_cf0"]:
+                views.append("Cf=0 Ī₂ comparison")
+            v1 = st.selectbox("preview", views, key="b1tab_view")
+            if v1.startswith("wide"):
+                st.dataframe(res["wide"].astype(str), height=460)
+            elif v1.startswith("summary"):
+                st.dataframe(res["summary"], hide_index=True, height=460)
+            elif v1.startswith("long"):
+                st.dataframe(res["long"], hide_index=True, height=460)
+            else:
+                st.dataframe(res["cf0"], hide_index=True, height=460)
+
+            fname = (f"b1bar_SDP_Cf{res['Cf']:g}_N{p.N}_T{p.T:g}_"
+                     f"{'tieDispatch' if prefer_b else 'tieWait'}.xlsx")
+            try:
+                st.download_button(
+                    "⬇  Download all b̄₁ results (Excel)",
+                    b1bar_workbook_bytes(res), file_name=fname,
+                    mime="application/vnd.openxmlformats-officedocument."
+                         "spreadsheetml.sheet",
+                    key="b1tab_dl")
+            except ImportError:
+                st.error("Excel export needs openpyxl: pip install openpyxl")

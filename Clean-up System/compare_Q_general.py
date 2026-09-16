@@ -32,7 +32,7 @@ from math import exp
 T, N = 5.0, 800
 LAM1, LAM2 = 5.0, 3.0
 H, PI1, PI2 = 1.0, 6.0, 6.0
-CF, CU = 8.0, 1.0
+CF, CU = 20.0, 10.0
 
 TAUS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
 I2_LIST = list(range(1, 31))
