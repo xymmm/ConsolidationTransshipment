@@ -41,6 +41,14 @@ CHANGE LOG (full b̄₁ table)
 8. The analytic overlays in the 3-D tab and the Inspector now read their
    parameters from the solved model dp.p instead of the live sidebar, so
    moving a slider after solving no longer desynchronises DP and analytic.
+
+CHANGE LOG (Simulation display)
+-------------------------------
+9. State trajectories are drawn as step functions and extended to T, and a
+   rug of R1 / R2 arrival ticks is added under them. Previously the linear
+   interpolation drew slopes between events and the plot stopped at the last
+   event, which made gaps in Retailer-2 arrivals hard to read. Display only:
+   the simulated paths, costs, summary table and event table are unchanged.
 """
 
 import io
@@ -1835,11 +1843,26 @@ with tab_sim:
                   "AN": dict(lw=1.4, alpha=0.65, ls="--")}
         colI, colB = "#1F618D", "#B03A2E"
         for k in traj:
-            ts = [x[0] for x in traj[k]]
-            axs.plot(ts, [x[1] for x in traj[k]], color=colI,
+            # I₂ and b₁ are piecewise constant between events, so draw them
+            # as steps and extend the last value to T (the cost panel below
+            # already integrates to T). Display only: no state is modified.
+            ts = [x[0] for x in traj[k]] + [p.T]
+            i2s = [x[1] for x in traj[k]] + [traj[k][-1][1]]
+            b1s = [x[2] for x in traj[k]] + [traj[k][-1][2]]
+            axs.plot(ts, i2s, color=colI, drawstyle="steps-post",
                      label=f"I₂ ({k})", **styles[k])
-            axs.plot(ts, [x[2] for x in traj[k]], color=colB,
+            axs.plot(ts, b1s, color=colB, drawstyle="steps-post",
                      label=f"b₁ ({k})", **styles[k])
+        # arrival rug: one tick per exogenous arrival. The y position is in
+        # axes coordinates, so the ticks do not change the y-limits used by
+        # the q annotations below. The initial "--" row is skipped.
+        r1_t = [r["t"] for r in rows if r["ev"] == "R1"]
+        r2_t = [r["t"] for r in rows if r["ev"] == "R2"]
+        xt = axs.get_xaxis_transform()
+        axs.plot(r2_t, [0.03] * len(r2_t), "|", color=colI, ms=9,
+                 transform=xt, label="R2 arrivals")
+        axs.plot(r1_t, [0.07] * len(r1_t), "|", color=colB, ms=9,
+                 transform=xt, label="R1 arrivals")
         for (ts_, q) in ships["DP"]:
             axs.axvline(ts_, color="0.55", lw=0.8)
             axs.annotate(f"q={q}", (ts_, axs.get_ylim()[1] * 0.97),
