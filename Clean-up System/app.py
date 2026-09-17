@@ -64,6 +64,9 @@ CHANGE LOG (monotone approximation)
     one-unit ridge, shows τ-violations before and after, keeps the results of
     both operators and prints plain-language conclusions with a comparison.
     Same logic as the conclusions of solverApproximate.py.
+12. The two gap panels of the Bump fill tab now run from τ = T on the left to
+    τ = 0 on the right, so reading left to right approaches the end of the
+    horizon, as in the 2-D tab. Display only.
 """
 
 import io
@@ -2357,14 +2360,18 @@ with tab_mono:
                      label=f"gap at ({int(I2s0)}, {int(b1s0)})")
             ag1.plot(taus_m, max_gap_tau, color="#B03A2E", lw=1.2, ls="--",
                      label=f"max gap, I₂ ≥ 1, b₁ ≤ {int(b1_cap)}")
-            ag1.set_xlabel("τ"); ag1.set_ylabel("V_mod − V*")
+            ag1.set_xlabel("τ  ←  end of horizon")
+            ag1.set_ylabel("V_mod − V*")
+            ag1.invert_xaxis()          # read left to right = approaching T
             ag1.grid(True, alpha=0.3); ag1.legend(fontsize=8)
             ag1.set_title("absolute gap", fontsize=10)
             ag2.plot(taus_m, rel, color="#1F618D", lw=1.8,
                      label=f"at ({int(I2s0)}, {int(b1s0)})")
             ag2.plot(taus_m, max_rel_tau, color="#B03A2E", lw=1.2, ls="--",
                      label="max over region")
-            ag2.set_xlabel("τ"); ag2.set_ylabel("% of V*")
+            ag2.set_xlabel("τ  ←  end of horizon")
+            ag2.set_ylabel("% of V*")
+            ag2.invert_xaxis()
             ag2.grid(True, alpha=0.3); ag2.legend(fontsize=8)
             ag2.set_title("relative gap", fontsize=10)
             figg.tight_layout(); st.pyplot(figg); plt.close(figg)
@@ -2392,6 +2399,13 @@ with tab_mono:
                             marker=".", label="modified (I₂, τ)")
                 ab1.legend(fontsize=8, loc="upper right")
             figb2.colorbar(im, ax=[ab1, ab2], label="b̄₁")
+            st.caption(
+                "Both gap panels run from τ = T on the left to τ = 0 on the "
+                "right, so reading left to right follows a path towards the "
+                "end of the horizon. Each point is still a separate problem: "
+                "the extra expected cost of switching to the modified table "
+                "from that state with that much time left. The b̄₁ heatmaps "
+                "above keep τ increasing upwards, as in the 3-D tab.")
             st.pyplot(figb2); plt.close(figb2)
 
             # ── slice table ───────────────────────────────────────
