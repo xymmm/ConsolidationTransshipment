@@ -1,31 +1,27 @@
 """
-bump_k1.py — dispatch threshold when only one dispatch is allowed (K = 1)
+bump_k1.py — bump in the (I2, b1) plane when only one dispatch is allowed
 ==========================================================================
 
-Uses KDispatchDP from k_dispatch_solver.py with K = 1, so the policy is the
-optimal policy with at most one dispatch over the horizon: the model decides
-when to dispatch and how much, and after that dispatch no other is allowed.
+Policy: at most one dispatch over the horizon (KDispatchDP with K = 1).
 
-For each instance in INSTANCES it reports
-  1. the threshold b1bar(I2, tau) at the chosen tau values, where b1bar is
-     the smallest backlog b1 at which the policy dispatches (inf = never);
-  2. how the threshold moves with I2 at every tau: how often it goes up,
-     stays the same, or goes down when I2 increases by one;
-  3. every place where it goes down, with its tau, I2 and the two
-     threshold values, and the shape of the threshold in each period:
-     rises only, falls only, falls then rises, or rises then falls; the
-     last one is the shape of the bump of the unrestricted DP;
-  4. the same count in the tau direction;
-and saves two figures per instance in OUT_DIR.
+A bump cell is a cell of the policy table at a fixed tau, rows I2 and
+columns b1, that waits while in the same column b1 some smaller I2 and some
+larger I2 dispatch. In Section 6.2 of the unrestricted DP these are the
+cells (6, 3) and (7, 3).
+
+For every instance and every period the script looks for bump cells. When a
+period has bump cells it prints the part of the policy table around them:
+    .     wait
+    q     dispatch q units
+    [.]   bump cell
+and, for each bump cell, the cost margin Q(wait) − best dispatch; a margin
+of size below 1e-9 is an exact tie, decided only by rounding. When an
+instance has no bump cell nothing is printed for it. No files are written.
 
 Run from PyCharm without arguments.
 """
 
-import os
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from solver import Params
 from k_dispatch_solver import KDispatchDP
 
@@ -35,114 +31,66 @@ INSTANCES = {
     "sec62":   dict(Cf=8,  pi1=6,  pi2=6),
     "meeting": dict(Cf=12, pi1=6,  pi2=8),
     "pi1_gt":  dict(Cf=20, pi1=10, pi2=6),
-    # an instance in which the K = 1 threshold first falls and then rises
     "falls_then_rises": dict(Cf=33.4, pi1=5.1, pi2=4.5, lam1=2.48, lam2=5.16,
                              h=0.22, cu=0.49, T=3.0, I2_min=-21, b1_max=25),
 }
-TAUS = (1.0, 3.0, 5.0)     # tau values for the printed table and the figure
-I2_SHOW = 25               # largest I2 printed and plotted
-OUT_DIR = "bump_k1_out"
+MAX_PERIODS = 10     # largest number of periods printed per instance
+TIE = 1e-9           # |margin| below this is an exact tie
 
 
-def steps(a, b):
-    """Compare thresholds a (at I2) and b (at I2 + 1), both finite."""
-    up = int((b > a).sum()); same = int((b == a).sum()); down = int((b < a).sum())
-    return up, same, down
+def bump_cells(D):
+    """D: dispatch table, rows I2 = 1, 2, ..., columns b1 = 1, 2, ..."""
+    below = np.maximum.accumulate(D, axis=0)
+    above = np.maximum.accumulate(D[::-1], axis=0)[::-1]
+    return (~D) & below & above
+
+
+def print_table(P, G, n, tau, margin):
+    """P: dispatch quantities, G: bump cells; rows I2 = 1.., cols b1 = 1.."""
+    rows, cols = np.nonzero(G)
+    r_lo, r_hi = max(rows.min() - 2, 0), min(rows.max() + 2, P.shape[0] - 1)
+    c_lo, c_hi = max(cols.min() - 3, 0), min(cols.max() + 3, P.shape[1] - 1)
+    print(f"\n  tau = {tau:.4f} (n = {n}), {len(rows)} bump cell(s)")
+    print("  I2 \\ b1 " + "".join(f"{j + 1:>5}" for j in range(c_lo, c_hi + 1)))
+    for i in range(r_lo, r_hi + 1):
+        cells = []
+        for j in range(c_lo, c_hi + 1):
+            if G[i, j]:
+                cells.append("[.]")
+            elif P[i, j] > 0:
+                cells.append(str(int(P[i, j])))
+            else:
+                cells.append(".")
+        print(f"  {i + 1:>7} " + "".join(f"{c:>5}" for c in cells))
+    for i, j in zip(rows, cols):
+        m = margin[i, j]
+        print(f"  bump cell (I2, b1) = ({i + 1}, {j + 1}): Q(wait) - best dispatch "
+              f"= {m:+.3e}" + ("  -> exact tie" if abs(m) < TIE else ""))
 
 
 def analyse(name, extra):
     p = Params(**{**BASE, **extra})
     kd = KDispatchDP(p, K=1).solve()
-    B = kd.threshold_table(1)                    # rows n = 1..N, cols I2 = 1..I2_max
-    taus = np.arange(1, p.N + 1) * p.dt
-
+    r0 = 1 - p.I2_min                                    # row of I2 = 1
+    found = []
+    for n in range(1, p.N + 1):
+        P = kd.pol[1][n][r0:, 1:]
+        G = bump_cells(P > 0)
+        if G.any():
+            found.append((n, P, G))
+    if not found:
+        return False
     print(f"\n=== {name}: {extra} ===")
-
-    # 1. threshold at the chosen tau values
-    print("1. threshold b1bar at I2 = 1, 2, ...  (inf = never dispatch)")
-    for tau in [t for t in TAUS if t <= p.T]:
-        row = B[int(round(tau / p.dt)) - 1][:I2_SHOW]
-        print(f"   tau = {tau:4.2f}: " + " ".join("inf" if np.isnan(v) else f"{int(v)}" for v in row))
-
-    # 2. direction in I2 (finite neighbours only)
-    a, b = B[:, :-1], B[:, 1:]
-    fin = np.isfinite(a) & np.isfinite(b)
-    up, same, down = steps(a[fin], b[fin])
-    tot = up + same + down
-    print(f"2. when I2 increases by one: threshold goes up {up} times "
-          f"({100 * up / tot:.1f}%), stays {same} ({100 * same / tot:.1f}%), "
-          f"goes down {down} ({100 * down / tot:.2f}%)")
-    back_to_inf = int((np.isfinite(a) & np.isnan(b)).sum())
-    print(f"   finite threshold followed by inf at the next I2: {back_to_inf}")
-
-    # 3. every place where it goes down
-    r, c = np.nonzero(fin & (b < a))
-    if r.size == 0:
-        print("3. the threshold never goes down in I2: no bump at K = 1")
-    else:
-        print(f"3. places where the threshold goes down in I2 ({r.size}):")
-        for i, j in list(zip(r, c))[:30]:
-            print(f"   tau = {taus[i]:.4f}: I2 = {j + 1} -> {j + 2}: "
-                  f"{int(B[i, j])} -> {int(B[i, j + 1])}")
-        if r.size > 30:
-            print(f"   ... {r.size - 30} more")
-
-    # 3b. shape of the threshold in I2 in each period
-    shape = dict(rises_only=0, falls_only=0, falls_then_rises=0,
-                 rises_then_falls=0, flat=0)
-    for row in B[:, :I2_SHOW]:
-        f = row[np.isfinite(row)]
-        d = np.sign(np.diff(f)); d = d[d != 0]
-        if d.size == 0:
-            shape["flat"] += 1; continue
-        rf = any(d[i] > 0 and (d[i + 1:] < 0).any() for i in range(len(d)))
-        fr = any(d[i] < 0 and (d[i + 1:] > 0).any() for i in range(len(d)))
-        if rf:
-            shape["rises_then_falls"] += 1
-        elif fr:
-            shape["falls_then_rises"] += 1
-        elif (d > 0).all():
-            shape["rises_only"] += 1
-        else:
-            shape["falls_only"] += 1
-    print(f"3b. shape in I2, number of periods: {shape}")
-    print("    a bump in the sense of the unrestricted DP is 'rises_then_falls'")
-
-    # 4. direction in tau
-    a, b = B[:-1, :], B[1:, :]
-    fin = np.isfinite(a) & np.isfinite(b)
-    up, same, down = steps(a[fin], b[fin])
-    tot = up + same + down
-    print(f"4. when tau increases by one period: threshold goes up {up} "
-          f"({100 * up / tot:.2f}%), stays {same}, goes down {down} "
-          f"({100 * down / tot:.2f}%)")
-
-    # figures
-    os.makedirs(OUT_DIR, exist_ok=True)
-    I2 = np.arange(1, I2_SHOW + 1)
-    fig, ax = plt.subplots(figsize=(7, 4))
-    for tau in [t for t in TAUS if t <= p.T]:
-        ax.step(I2, B[int(round(tau / p.dt)) - 1][:I2_SHOW], where="mid",
-                lw=1.8, label=f"τ = {tau}")
-    ax.set_xlabel("I₂"); ax.set_ylabel("b̄₁ (missing = never)")
-    ax.set_title(f"{name}: threshold with one dispatch allowed", fontsize=10)
-    ax.grid(True, alpha=0.3); ax.legend(fontsize=8)
-    fig.tight_layout(); fig.savefig(os.path.join(OUT_DIR, f"{name}_k1_slices.png"), dpi=140)
-    plt.close(fig)
-
-    fig, ax = plt.subplots(figsize=(7, 4))
-    cmap = plt.get_cmap("viridis").copy(); cmap.set_bad("#C8C8C8")
-    im = ax.imshow(np.ma.masked_invalid(B[:, :I2_SHOW]), aspect="auto", origin="lower",
-                   cmap=cmap, interpolation="nearest",
-                   extent=[0.5, I2_SHOW + 0.5, taus[0], taus[-1]])
-    ax.set_xlabel("I₂"); ax.set_ylabel("τ")
-    ax.set_title(f"{name}: b̄₁ with one dispatch allowed, grey = never", fontsize=10)
-    fig.colorbar(im, ax=ax)
-    fig.tight_layout(); fig.savefig(os.path.join(OUT_DIR, f"{name}_k1_heatmap.png"), dpi=140)
-    plt.close(fig)
+    print(f"periods with bump cells: {len(found)} of {p.N}")
+    for n, P, G in found[:MAX_PERIODS]:
+        w = kd.Q(0, kd.V[1][n - 1])
+        d, _ = kd.best_dispatch(kd.V[0][n - 1])
+        print_table(P, G, n, n * p.dt, (w - d)[r0:, 1:])
+    if len(found) > MAX_PERIODS:
+        print(f"\n  ... {len(found) - MAX_PERIODS} more periods not printed")
+    return True
 
 
 if __name__ == "__main__":
     for name, extra in INSTANCES.items():
         analyse(name, extra)
-    print(f"\nFigures saved in {OUT_DIR}/")
