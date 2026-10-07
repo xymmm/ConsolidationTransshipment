@@ -115,6 +115,14 @@ CHANGE LOG (analytic comparisons, meeting of 18 September)
     (checked on five full-size instances including Cf = 0 and non-zero
     terminal costs) in seconds instead of minutes. solver.py is still used
     when the box is unticked or transship_core.py is absent.
+22. New tab "Fixed K". From one start state it compares, exactly on the same
+    chain: the closed-loop policy with at most K dispatches whose times and
+    quantities are set by the model (k_dispatch_solver.py); scheduled
+    dispatch times fixed at the stockout, SP(K), whose K = 1 case is the
+    Zhou and Wang (2023) analogue; the same with the T-policy quantity rule,
+    SPc(K); and the best uniform T-policy. It also shows when the
+    dispatches happen and how large they are, and the threshold of every
+    layer k next to the note's one-shot rule.
 """
 
 import io
@@ -132,6 +140,11 @@ try:
     from transship_core import Chain       # vectorised, bit-identical solver
 except ImportError:                        # fall back to solver.py alone
     Chain = None
+try:
+    from k_dispatch_solver import KDispatchDP
+    from scheduled_policy import ScheduledPolicy
+except ImportError:                        # the Fixed K tab is then disabled
+    KDispatchDP = ScheduledPolicy = None
 
 
 def fast_solve_into(dp_):
@@ -1411,9 +1424,9 @@ def mono_evaluate_operator(dp_, mode, progress=None):
 # ======================================================================
 # TABS
 # ======================================================================
-tab_2d, tab_3d, tab_q, tab_pol, tab_sim, tab_b1, tab_mono = st.tabs(
+tab_2d, tab_3d, tab_q, tab_pol, tab_sim, tab_b1, tab_mono, tab_k = st.tabs(
     ["📈 2D Plots", "🧊 3D Plots", "🔍 Inspector", "🗺 Policy Table",
-     "🎬 Simulation", "📋 b̄₁ Table", "🩹 Bump fill"])
+     "🎬 Simulation", "📋 b̄₁ Table", "🩹 Bump fill", "🎯 Fixed K"])
 
 # ======================================================================
 # TAB 1: 2D PLOTS
@@ -3051,3 +3064,252 @@ with tab_mono:
             st.markdown("\n".join(lines))
             if len(done) >= 2 and valid:
                 st.dataframe(comp_df, hide_index=True)
+
+
+# ======================================================================
+# TAB 8: FIXED NUMBER OF DISPATCHES — fixed-K policy, scheduled epochs,
+#        Zhou & Wang analogue, uniform T-policy, all exact on this chain
+# ======================================================================
+with tab_k:
+    if dp is None:
+        st.info("👈  Set parameters and press **Solve DP** first.")
+    elif KDispatchDP is None or ScheduledPolicy is None:
+        st.error("This tab needs k_dispatch_solver.py, scheduled_policy.py and "
+                 "transship_core.py in the same folder as app.py.")
+    else:
+        p = dp.p
+        st.subheader("Fixed number of dispatches: when and how much")
+        st.markdown(
+            "All costs are exact expected costs from the chosen start state at "
+            "τ = T on the same chain as the DP, so they are directly comparable.\n\n"
+            "- **Fixed K (closed loop)**: at most K dispatches; the time and the "
+            "quantity of every dispatch are decided by the model from the "
+            "realised state. Solved by k_dispatch_solver.py.\n"
+            "- **Scheduled SP(K)**: K dispatch times are chosen once, at the "
+            "stockout, and then kept; at each time the quantity is chosen from "
+            "the observed state and may be zero. **SP(1) is the analogue of "
+            "Zhou and Wang (2023)**: one pre-set transshipment time, quantity "
+            "set at that time.\n"
+            "- **SPc(K)**: as SP(K) but every scheduled time dispatches "
+            "min(b₁, I₂), the T-policy quantity rule; this is the T-policy "
+            "with unequal spacing.\n"
+            "- **T-policy**: equal spacing Δ and quantity min(b₁, I₂), best Δ "
+            "on a grid.")
+        if float(p.Cf) == 0.0:
+            st.warning("Cf = 0: these are 3-D models of solver.py at Cf = 0, "
+                       "not the 2-D switching model of the Cf = 0 note.")
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            Kmax_k = st.select_slider("largest K (fixed-K policy)",
+                                      options=[1, 2, 3, 4, 5], value=3,
+                                      key="fk_K")
+        with k2:
+            I2s_k = st.number_input("start I₂", min_value=1,
+                                    max_value=int(p.I2_max),
+                                    value=min(15, int(p.I2_max)), key="fk_i2")
+        with k3:
+            b1s_k = st.number_input("start b₁", min_value=0,
+                                    max_value=int(p.b1_max), value=0,
+                                    key="fk_b1")
+        k4, k5, k6 = st.columns(3)
+        with k4:
+            spK_k = st.select_slider("largest K for scheduled SP",
+                                     options=[0, 1, 2, 3], value=2,
+                                     key="fk_spK")
+        with k5:
+            spc_k = st.checkbox("also SPc (T-policy quantity rule)",
+                                value=False, key="fk_spc")
+        with k6:
+            step_k = st.select_slider("SP search grid (periods)",
+                                      options=[2, 4, 8], value=4, key="fk_step")
+        st.caption("Run time at N = 400: the fixed-K layers take about 5 s each "
+                   "and SP(1) a few seconds, but SP(2) about one minute and "
+                   "SP(3) about one and a half minutes per quantity rule. A "
+                   "coarser search grid is faster; the result is then refined "
+                   "on the full grid.")
+        fk_key = (id(dp), int(Kmax_k), int(I2s_k), int(b1s_k), int(spK_k),
+                  bool(spc_k), int(step_k))
+        if st.button("Compute fixed-K comparison", type="primary", key="fk_go"):
+            bar = st.progress(0.0, text="fixed-K layers")
+            kd = KDispatchDP(p, int(Kmax_k)).solve()
+            vstar = float(dp.get_value(p.N, int(I2s_k), int(b1s_k)))
+            laws = {K: kd.path_law(K, int(I2s_k), int(b1s_k))
+                    for K in range(1, int(Kmax_k) + 1)}
+            bar.progress(0.25, text="structure of each layer")
+            struct = kd.structure_report() if Kmax_k >= 1 else []
+            tabs_k = {k: kd.threshold_table(k) for k in range(1, int(Kmax_k) + 1)}
+            tabs_k["myopic"] = kd.threshold_table(1, kd.myopic_table())
+            dv, vks = kd.marginal_values(int(I2s_k), int(b1s_k))
+            ch_k = Chain(p)
+            sp_res = {}
+            rules = ["optimal"] + (["clear"] if spc_k else [])
+            jobs = [(r_, K) for r_ in rules for K in range(1, int(spK_k) + 1)]
+            for j, (r_, K) in enumerate(jobs):
+                bar.progress(0.3 + 0.6 * j / max(len(jobs), 1),
+                             text=f"scheduled {r_} K={K}")
+                spo = ScheduledPolicy(p, r_, ch_k)
+                rr = spo.best_K(K, int(I2s_k), int(b1s_k), step=int(step_k))
+                rr["law"] = spo.dispatch_law(rr["epochs_n"], int(I2s_k),
+                                             int(b1s_k), cmax=6)["count_pmf"]
+                sp_res[(r_, K)] = rr
+            bar.progress(0.92, text="uniform T-policy")
+            spc_obj = ScheduledPolicy(p, "clear", ch_k)
+            tp_best = (np.inf, None)
+            for D in np.round(np.arange(0.125, float(p.T), 0.125), 4):
+                c_, _ = spc_obj.uniform_T_policy(float(D), int(I2s_k), int(b1s_k))
+                if c_ < tp_best[0]:
+                    tp_best = (c_, float(D))
+            bar.empty()
+            st.session_state.fk_res = (fk_key, dict(
+                vstar=vstar, vks=vks, dv=dv, laws=laws, struct=struct,
+                tabs=tabs_k, sp=sp_res, tp=tp_best, t_grid=laws[1]["t_grid"]
+                if laws else None))
+
+        cached_k = st.session_state.get("fk_res")
+        if cached_k is None or cached_k[0] != fk_key:
+            st.info("Press **Compute fixed-K comparison**.")
+        else:
+            R = cached_k[1]
+            vstar = R["vstar"]
+            pct = lambda v: 100.0 * (v - vstar) / abs(vstar)
+
+            # ── A. cost against K ──────────────────────────────────
+            st.markdown("#### A. Cost against the number of dispatches")
+            m1, m2 = st.columns(2)
+            m1.metric("V* (no limit on dispatches)", f"{vstar:.4f}")
+            m2.metric(f"best uniform T-policy (Δ = {R['tp'][1]})",
+                      f"{R['tp'][0]:.4f}", f"{pct(R['tp'][0]):+.2f}% vs V*",
+                      delta_color="inverse")
+            rowsA = []
+            Kall = sorted(set(range(1, len(R["vks"]))) |
+                          {K for (_, K) in R["sp"]})
+            for K in Kall:
+                row = dict(K=K)
+                if K < len(R["vks"]):
+                    row["fixed K, closed loop"] = round(R["vks"][K], 4)
+                    row["% vs V*"] = round(pct(R["vks"][K]), 3)
+                    row["value of K-th dispatch"] = round(R["dv"][K - 1], 4)
+                if ("optimal", K) in R["sp"]:
+                    s_ = R["sp"][("optimal", K)]
+                    row["scheduled SP(K)"] = round(s_["cost"], 4)
+                    row["SP % vs V*"] = round(pct(s_["cost"]), 3)
+                    row["SP times t"] = ", ".join(f"{t:.3f}" for t in
+                                                  sorted(s_["epochs_t"]))
+                    if K < len(R["vks"]):
+                        row["value of state-dependent timing"] = round(
+                            s_["cost"] - R["vks"][K], 4)
+                if ("clear", K) in R["sp"]:
+                    s_ = R["sp"][("clear", K)]
+                    row["SPc(K)"] = round(s_["cost"], 4)
+                    row["SPc times t"] = ", ".join(f"{t:.3f}" for t in
+                                                   sorted(s_["epochs_t"]))
+                rowsA.append(row)
+            st.dataframe(pd.DataFrame(rowsA), hide_index=True)
+            st.caption("Row K = 1, column 'scheduled SP(K)', is the Zhou and "
+                       "Wang analogue. 'value of state-dependent timing' = "
+                       "SP(K) − fixed-K cost with the same K: what is lost by "
+                       "fixing the dispatch times at the stockout.")
+            figA, axA = plt.subplots(figsize=(9, 4))
+            Ks_v = list(range(1, len(R["vks"])))
+            axA.plot(Ks_v, [R["vks"][K] for K in Ks_v], "o-", color="#1F618D",
+                     lw=2, label="fixed K, closed loop")
+            for (r_, col_, lab_) in (("optimal", "#B03A2E", "scheduled SP(K)"),
+                                     ("clear", "#CA6F1E", "SPc(K)")):
+                Ks_s = sorted(K for (rr_, K) in R["sp"] if rr_ == r_)
+                if Ks_s:
+                    axA.plot(Ks_s, [R["sp"][(r_, K)]["cost"] for K in Ks_s],
+                             "s--", color=col_, lw=1.6, label=lab_)
+            if ("optimal", 1) in R["sp"]:
+                axA.annotate("Zhou & Wang analogue",
+                             (1, R["sp"][("optimal", 1)]["cost"]),
+                             xytext=(8, 4), textcoords="offset points",
+                             fontsize=8, color="#B03A2E")
+            axA.axhline(vstar, color="0.3", lw=1, label="V*")
+            axA.axhline(R["tp"][0], color="0.6", lw=1, ls=":",
+                        label=f"uniform T-policy, Δ={R['tp'][1]}")
+            axA.set_xlabel("K = number of dispatches allowed")
+            axA.set_ylabel("expected cost from start state")
+            axA.set_xticks(Kall)
+            axA.grid(True, alpha=0.3); axA.legend(fontsize=8)
+            st.pyplot(figA); plt.close(figA)
+
+            # ── B. when and how much ───────────────────────────────
+            st.markdown("#### B. When the dispatches happen and how large "
+                        "they are")
+            Kd = st.select_slider("K for the detail view",
+                                  options=sorted(R["laws"]),
+                                  value=min(2, max(R["laws"])), key="fk_Kd")
+            law = R["laws"][Kd]
+            tg = R["t_grid"]
+            figB, axB = plt.subplots(figsize=(10, 3.8))
+            cols_b = cm.tab10(np.linspace(0, 0.9, max(Kd, 2)))
+            bins = np.linspace(0, float(p.T), 51)
+            for j in range(Kd):
+                w_ = law["time_law"][j]
+                h_, _ = np.histogram(tg, bins=bins, weights=w_)
+                axB.step(bins[:-1], h_, where="post", color=cols_b[j], lw=1.8,
+                         label=f"dispatch {j + 1} (prob "
+                               f"{law['dispatches'][j]['prob']:.3f})")
+            if ("optimal", Kd) in R["sp"]:
+                for t_ in R["sp"][("optimal", Kd)]["epochs_t"]:
+                    axB.axvline(t_, color="#B03A2E", ls="--", lw=1.2)
+                axB.plot([], [], color="#B03A2E", ls="--",
+                         label=f"SP({Kd}) scheduled times")
+            axB.set_xlabel("time since stockout t")
+            axB.set_ylabel("probability per bin")
+            axB.set_title(f"fixed K = {Kd}: law of the time of each dispatch",
+                          fontsize=10)
+            axB.grid(True, alpha=0.3); axB.legend(fontsize=8)
+            st.pyplot(figB); plt.close(figB)
+            dfB = pd.DataFrame(law["dispatches"]).round(4)
+            dfB.columns = ["dispatch", "probability", "mean time t",
+                           "mean quantity"]
+            st.dataframe(dfB, hide_index=True)
+            pmf_txt = ", ".join(f"{i}: {v:.4f}" for i, v in
+                                enumerate(law["count_pmf"]))
+            st.caption(f"Law of the number of dispatches under fixed K = {Kd}: "
+                       f"{pmf_txt}."
+                       + (f" Under SP({Kd}): " + ", ".join(
+                           f"{i}: {v:.4f}" for i, v in
+                           enumerate(R['sp'][('optimal', Kd)]['law'][:Kd + 1]))
+                          + "." if ("optimal", Kd) in R["sp"] else ""))
+
+            # ── C. structure of each layer ─────────────────────────
+            st.markdown("#### C. Threshold of each layer k = dispatches "
+                        "still allowed")
+            lay = ["myopic"] + list(range(1, len(R["vks"])))
+            figC, axC = plt.subplots(1, len(lay), figsize=(3.2 * len(lay), 3.6),
+                                     sharey=True)
+            axC = np.atleast_1d(axC)
+            cm_c = plt.get_cmap("viridis").copy(); cm_c.set_bad("#C8C8C8")
+            allfin = np.concatenate([np.ravel(R["tabs"][k][np.isfinite(R["tabs"][k])])
+                                     for k in lay])
+            vmax_c = float(np.percentile(allfin, 99)) if allfin.size else 10
+            taus_c = np.arange(1, p.N + 1) * p.T / p.N
+            for ax_, k in zip(axC, lay):
+                im_ = ax_.imshow(np.ma.masked_invalid(R["tabs"][k]),
+                                 aspect="auto", origin="lower", cmap=cm_c,
+                                 interpolation="nearest", vmin=1, vmax=vmax_c,
+                                 extent=[0.5, p.I2_max + 0.5, taus_c[0],
+                                         taus_c[-1]])
+                ax_.set_title("note rule (myopic)" if k == "myopic"
+                              else f"k = {k}", fontsize=9)
+                ax_.set_xlabel("I₂")
+            axC[0].set_ylabel("τ")
+            figC.colorbar(im_, ax=list(axC), label="b̄₁")
+            st.pyplot(figC); plt.close(figC)
+            if R["struct"]:
+                st.dataframe(pd.DataFrame(R["struct"]).round(4), hide_index=True)
+            f_ = lambda A: np.where(np.isfinite(A), A, np.inf)
+            Lk = [k for k in lay if k != "myopic"]
+            if Lk:
+                My_, L1_, LK_ = (f_(R["tabs"]["myopic"]), f_(R["tabs"][1]),
+                                 f_(R["tabs"][Lk[-1]]))
+                st.caption(
+                    f"Share of (τ, I₂) cells with b̄₁(note rule) ≤ b̄₁(k=1): "
+                    f"{(My_ <= L1_).mean():.4f}; with b̄₁(k={Lk[-1]}) ≤ "
+                    f"b̄₁(k=1): {(LK_ <= L1_).mean():.4f}. The note rule is the "
+                    "layer k = 1 with waiting priced as 'never dispatch'; the "
+                    "exact layer k = 1 keeps the option of one later dispatch. "
+                    "share_b1bar_next_le_this = 1 means one more allowed "
+                    "dispatch never delays a dispatch anywhere.")

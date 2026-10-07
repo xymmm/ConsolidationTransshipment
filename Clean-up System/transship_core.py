@@ -26,6 +26,17 @@ import numpy as np
 from solver import Params
 
 
+def _dot(a, b):
+    """
+    Inner product computed elementwise, without BLAS. On macOS, numpy linked
+    to Apple Accelerate can raise spurious 'divide by zero / overflow /
+    invalid value encountered in matmul' warnings for an ordinary '@' on
+    finite vectors; the result is correct but the console is misleading.
+    An elementwise sum never calls BLAS, so the warnings cannot appear.
+    """
+    return float(np.sum(np.asarray(a, float) * np.asarray(b, float)))
+
+
 def warn_if_cf0(p, where):
     """
     Chain, like solver.py, is the 3-D model V(I2, b1, tau) for every Cf.
@@ -231,7 +242,7 @@ class Chain:
                     m = mass[c, cells]
                     if not m.any():
                         continue
-                    cost += float(m @ gq)
+                    cost += _dot(m, gq)
                     c2 = min(c + 1, cmax) if q > 0 else c
                     if q > 0:
                         disp_prob[n] += m.sum()
@@ -240,7 +251,9 @@ class Chain:
                                 + np.bincount(d2, m * p.p2, size))
             mass = new
         Vterm = self.terminal().ravel()
-        cost += float(mass.sum(axis=0) @ Vterm)
+        cost += _dot(mass.sum(axis=0), Vterm)
+        if not np.isfinite(cost) or not np.all(np.isfinite(mass)):
+            raise FloatingPointError("forward(): non-finite cost or mass")
         return dict(count_pmf=mass.sum(axis=1), cost=cost,
                     disp_prob=disp_prob, final_mass=mass)
 
@@ -266,7 +279,7 @@ class Chain:
         acc = 0.0
         for n in range(N, 0, -1):
             P[n] = x; R[n] = acc
-            acc += float(x @ g0)
+            acc += _dot(x, g0)
             x = (np.bincount(d0, x * p.p0, size) + np.bincount(d1, x * p.p1, size)
                  + np.bincount(d2, x * p.p2, size))
         P[0] = x; R[0] = acc

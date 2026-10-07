@@ -65,7 +65,7 @@ import itertools
 import time
 import numpy as np
 from solver import Params
-from transship_core import Chain, warn_if_cf0
+from transship_core import Chain, warn_if_cf0, _dot
 
 
 class ScheduledPolicy:
@@ -131,7 +131,7 @@ class ScheduledPolicy:
         costs = np.full(self.p.N + 1, np.nan)
         for m in range(1, self.p.N + 1):
             U = self._epoch_value(self.Vwait[m - 1])
-            c = R[m] + float(P[m] @ U.ravel())
+            c = R[m] + _dot(P[m], U.ravel())
             costs[m] = c
             if c < best[0]:
                 best = (c, m)
@@ -152,7 +152,7 @@ class ScheduledPolicy:
             for n in range(m2 + 1, N + 1):
                 if n in gset:
                     U = self._epoch_value(W)
-                    c = R[n] + float(P[n] @ U.ravel())
+                    c = R[n] + _dot(P[n], U.ravel())
                     if c < best[0]:
                         best = (c, (n, m2))
                 W = ch.Q(0, W)
