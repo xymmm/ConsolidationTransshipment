@@ -238,7 +238,9 @@ class KDispatchDP:
     def structure_report(self, tie_free=True):
         """
         Per layer k:
-          I2_viol   cells where b1bar_k increases in I2 (the bump)
+          I2_viol   cells where b1bar_k increases in I2, i.e. departures
+                    from a non-increasing threshold; for k = 1 this is the
+                    steady rise of the threshold, not a local bump
           tau_viol  cells where b1bar_k increases as tau increases
           ret_rule  share of dispatch cells whose q equals
                     min(b1, I2 - S_k(n)), S_k(n) = retained stock at the

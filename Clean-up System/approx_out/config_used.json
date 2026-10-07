@@ -1,0 +1,42 @@
+{
+  "stage": "run",
+  "model": "3d",
+  "T": 5.0,
+  "N": 400,
+  "N2d": 2000,
+  "lam1": 5.0,
+  "lam2": 3.0,
+  "h": 1.0,
+  "cu": 1.0,
+  "pi1": 6.0,
+  "pi2": 6.0,
+  "Cf": [
+    8.0
+  ],
+  "c1": 0.0,
+  "c2": 0.0,
+  "v2": 0.0,
+  "I2_min": -31,
+  "I2_max": 40,
+  "b1_max": 130,
+  "files": [
+    "solved/*.npz"
+  ],
+  "ops": [
+    "fill",
+    "remove"
+  ],
+  "state": [
+    30,
+    2
+  ],
+  "b1_cap": 40,
+  "top_margin": 5,
+  "save_dir": "solved",
+  "out": "approx_out",
+  "format": "csv",
+  "plots": "plots",
+  "files_analysed": [
+    "solved/model3d_Cf8_N400_T5_lam15_lam23_h1_cu1_pi16_pi26_e039e6.npz"
+  ]
+}
