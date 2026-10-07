@@ -67,6 +67,54 @@ CHANGE LOG (monotone approximation)
 12. The two gap panels of the Bump fill tab now run from τ = T on the left to
     τ = 0 on the right, so reading left to right approaches the end of the
     horizon, as in the 2-D tab. Display only.
+
+CHANGE LOG (analytic comparisons, meeting of 18 September)
+----------------------------------------------------------
+13. One analytic module (an_*) now serves every tab and always reads the SOLVED
+    parameters dp.p. Previously the Policy Table, the Simulation tab and the
+    2-D tab read the live sidebar, so moving a slider after solving silently
+    compared the DP of one instance with the analytic rule of another.
+14. The general-Cf rule is labelled by the equation that applies: Eq. (29) of
+    the 22 July note in general, Eq. (36) when π₁ = π₂. The code already used
+    the general margin delta with the (π₁ − π₂)τ term; only labels and the
+    monotonicity statements were specific to π₁ = π₂. For π₁ < π₂ the analytic
+    threshold is NOT monotone in τ (Theorem 6), and the text now says so.
+15. Cf regime is explicit in every tab. At Cf = 0 the general rule degenerates
+    to b̄₁ ∈ {1, +∞} and the like-for-like comparison is the 2-D switching DP
+    (solver_cf0_2d.py) against Eq. (20)-(22) of the 1 August note; the 3-D
+    DP at Cf = 0 is a different model and is shown only as a reference.
+16. 2-D tab: analytic overlays and a DP − analytic summary for q*, b̄₁ (Case 1),
+    Ī₂ (Case 2) and V^n. The V^n overlay is Vd of Eq. (27), the cost of
+    "dispatch at most once now, never again", which is an upper bound on V*
+    up to O(Δt); it is shown only when c₁ = c₂ = v₂ = 0.
+17. Simulation tab: both policies are now checked at every arrival AND at
+    every period boundary. When π₁ < π₂ the threshold can fall as time passes,
+    so a dispatch can become optimal between arrivals; checking only at
+    arrivals missed those decisions. The analytic policy is no longer
+    restricted to R1 arrivals, since that restriction relied on Theorems 3-4.
+18. Bump fill tab: new operator "Mixed M±". In each period it chooses the
+    non-increasing threshold that flips the cheapest set of cells, where the
+    cost of a forced dispatch is its regret |Q(wait) − best dispatch| under V*
+    and the cost of a forced wait is the same regret times the expected
+    sojourn 1/((λ₁+λ₂)Δt) before the next arrival. It is solved exactly by a
+    dynamic programme over I₂ (isotonic regression), so per row it fills
+    where filling is cheap and removes where removing is cheap. M⁻ and M⁺
+    are feasible candidates of the same programme. The modified table is
+    evaluated exactly, as before. Section 6.2 instance from (30, 2): M⁻
+    0.1107, M⁺ 0.7351, M± 0.1107 with fewer cells changed. Instance of
+    18 September (Cf=12, π₂=8): M⁻ 5.0334, M⁺ 1.5447, M± 0.4841.
+19. Bump fill tab: new option "Analytic policy", which replaces the optimal
+    table by the q* of Eq. (25)-(26) and evaluates it exactly, so the cost of
+    using the note's rule in this model is reported as an exact gap. The
+    conclusions now compare every operator that has been evaluated.
+20. b̄₁ Table export: columns renamed from *_eq36 to *_analytic, README states
+    which equation applies, and the Cf = 0 sheet adds the two differences
+    2-D DP − Eq. (20)-(22) and 3-D DP − Eq. (20)-(22).
+21. Optional vectorised solver (sidebar "Solver"): the DP is computed by
+    transship_core.Chain, which reproduces solver.py element by element
+    (checked on five full-size instances including Cf = 0 and non-zero
+    terminal costs) in seconds instead of minutes. solver.py is still used
+    when the box is unticked or transship_core.py is absent.
 """
 
 import io
@@ -80,6 +128,26 @@ import streamlit as st
 from scipy.stats import poisson
 from solver import Params, TransshipmentDP
 from solver_cf0_2d import ParamsCf0, SwitchingDPCf0
+try:
+    from transship_core import Chain       # vectorised, bit-identical solver
+except ImportError:                        # fall back to solver.py alone
+    Chain = None
+
+
+def fast_solve_into(dp_):
+    """
+    Fill a TransshipmentDP object with the solution computed by
+    transship_core.Chain instead of solver.py's Python loops. Chain applies the
+    same recursion, cost order, clipping and tie rule, so policy and V_all are
+    identical element by element; only the speed differs. Everything else in
+    the app keeps using the TransshipmentDP object as before.
+    """
+    V_all, pol = Chain(dp_.p).solve()
+    dp_.policy = pol
+    dp_.V_all = V_all
+    dp_.V_final = V_all[-1].copy()
+    dp_._solved = True
+    return dp_
 
 
 @st.cache_data(show_spinner=False)
@@ -214,6 +282,19 @@ with st.sidebar.expander("📊  Threshold display", expanded=False):
         "Turn this on to line up with a figure that plots retained inventory "
         "instead of the participation threshold."
     )
+
+# ── solver choice ───────────────────────────────────────────────────────
+with st.sidebar.expander("⚙️  Solver", expanded=False):
+    use_fast = st.checkbox(
+        "Vectorised solver (transship_core.Chain)", value=Chain is not None,
+        disabled=Chain is None, key="use_fast")
+    st.caption(
+        "Same model, recursion, cost order, clipping and tie rule as "
+        "solver.py, so the policy table and V are identical element by "
+        "element; it only computes each period on the whole state grid at "
+        "once instead of looping over states. Untick to run solver.py itself."
+        + ("" if Chain is not None else
+           " transship_core.py was not found, so solver.py is used."))
 
 # ── solve button ────────────────────────────────────────────────────────
 st.sidebar.markdown("---")
@@ -442,6 +523,156 @@ def b1bar_dp_row_tie(dp_, n, tol, prefer_dispatch):
     return out, tie
 
 # ======================================================================
+# ANALYTIC RESULTS ON THE SOLVED PARAMETERS  (used by every tab)
+# ======================================================================
+# General-Cf note (22 July), Sections 3-5, with
+#     delta(m, tau) = (h+pi2)/lam2 * E[min(K, m)] - cu + (pi1-pi2)*tau,
+#     K ~ Poisson(lam2*tau):
+#   q° = min{b1, #{m <= I2 : delta(m) > 0}},  S = sum of the top q° deltas,
+#   q* = q° if S > Cf else 0                                   Eq. (25)-(26)
+#   b1bar(I2, tau) = min{b : sum_{i<b} delta(I2-i) > Cf}       Eq. (29)
+#   Vw from Eq. (20) and Vd = Vw - (S - Cf)^+                   Eq. (27)
+# It reduces to Eq. (33)-(36) when pi1 = pi2. The rule compares "dispatch now,
+# never again" with "never dispatch", both priced by Vw, so it is a one-shot
+# rule and not the optimal policy of the 3-D model.
+#
+# Cf = 0 note (1 August): 2-D switching model V(I2, tau),
+#   Ibar2(tau) = min{I2 >= 1 : E[min(K, I2)] >= g(tau)},
+#   g(tau) = lam2 (cu + (pi2-pi1) tau)/(h+pi2)                 Eq. (20)-(22)
+# Its exact DP is solver_cf0_2d.py. At Cf = 0 the general rule gives the same
+# boundary with a strict inequality, b1bar in {1, +inf}.
+
+
+def an_eq_label(p_):
+    """Equation of the general-Cf note that applies to the solved instance."""
+    return "Eq. (36)" if abs(float(p_.pi1) - float(p_.pi2)) < 1e-12 else "Eq. (29)"
+
+
+def an_terminal_zero(p_):
+    return (float(getattr(p_, "c1", 0.0)) == 0.0
+            and float(getattr(p_, "c2", 0.0)) == 0.0
+            and float(getattr(p_, "v2", 0.0)) == 0.0)
+
+
+def an_delta(p_, tau, mmax):
+    """delta(m, tau) for m = 0..mmax; index 0 is unused."""
+    Em = _Emin_array(p_.lam2 * tau, int(max(mmax, 1)))
+    return ((p_.h + p_.pi2) / max(p_.lam2, 1e-12) * Em - p_.cu
+            + (p_.pi1 - p_.pi2) * tau)
+
+
+def an_q(p_, I2, b1, tau):
+    """Analytic q* of Eq. (25)-(26) at one state. 0 means wait."""
+    I2, b1 = int(I2), int(b1)
+    if I2 < 1 or b1 < 1 or tau <= 0:
+        return 0
+    d = an_delta(p_, tau, I2)[1:I2 + 1]
+    n_pos = int((d > 0.0).sum())
+    if n_pos == 0:
+        return 0
+    qo = min(b1, n_pos)
+    S = float(d[I2 - qo:].sum())          # the top qo levels
+    return qo if S > p_.Cf else 0
+
+
+def an_q_table(p_, tau, K=None, B=None):
+    """Analytic q* on I2 = 1..K (rows) and b1 = 1..B (columns)."""
+    K = int(K or p_.I2_max); B = int(B or p_.b1_max)
+    out = np.zeros((K, B), int)
+    if tau <= 0 or K < 1 or B < 1:
+        return out
+    d = an_delta(p_, tau, K)
+    pos = d[1:] > 0.0
+    if not pos.any():
+        return out
+    m_c = int(np.argmax(pos)) + 1            # delta is non-decreasing in m
+    P = np.concatenate(([0.0], np.cumsum(d[1:])))
+    b1s = np.arange(1, B + 1)
+    for I2 in range(m_c, K + 1):
+        qo = np.minimum(b1s, I2 - m_c + 1)
+        S = P[I2] - P[I2 - qo]
+        out[I2 - 1] = np.where(S > p_.Cf, qo, 0)
+    return out
+
+
+def an_b1bar(p_, tau, K=None):
+    """Analytic b̄₁ of Eq. (29) for I2 = 1..K. NaN = +infinity."""
+    return b1bar_analytic_row(int(K or p_.I2_max), float(tau), p_.lam2, p_.h,
+                              p_.pi1, p_.pi2, p_.cu, p_.Cf)
+
+
+def an_I2bar_given_b1(p_, b1, tau, K=None):
+    """Smallest I2 >= 1 at which the analytic rule dispatches at this b1."""
+    K = int(K or p_.I2_max)
+    if b1 < 1:
+        return np.nan
+    col = an_q_table(p_, tau, K, int(b1))[:, int(b1) - 1]
+    hit = np.nonzero(col > 0)[0]
+    return float(hit[0] + 1) if hit.size else np.nan
+
+
+def an_Vw(p_, I2, b1, tau):
+    """Never-dispatch value of Eq. (20); for I2 <= 0 the closed form of Sec. 2."""
+    lam2_ = max(p_.lam2, 1e-12)
+    base = (p_.pi1 * b1 * tau + 0.5 * (p_.pi1 * p_.lam1 + p_.pi2 * p_.lam2)
+            * tau ** 2 - p_.pi2 * I2 * tau)
+    if I2 <= 0:
+        return float(base)
+    k = np.arange(0, int(I2) + 1)
+    pmf = poisson.pmf(k, p_.lam2 * tau)
+    return float(base + (p_.h + p_.pi2) * I2 * (I2 + 1) / (2 * lam2_)
+                 - (p_.h + p_.pi2) / (2 * lam2_)
+                 * np.sum(pmf * (I2 - k) * (I2 - k + 1)))
+
+
+def an_Vd(p_, I2, b1, tau):
+    """Vd = Vw - (S - Cf)^+ of Eq. (27). NaN unless c1 = c2 = v2 = 0."""
+    if not an_terminal_zero(p_):
+        return np.nan
+    vw = an_Vw(p_, I2, b1, tau)
+    if I2 < 1 or b1 < 1 or tau <= 0:
+        return vw
+    d = an_delta(p_, tau, int(I2))[1:int(I2) + 1]
+    n_pos = int((d > 0.0).sum())
+    if n_pos == 0:
+        return vw
+    qo = min(int(b1), n_pos)
+    S = float(d[int(I2) - qo:].sum())
+    return vw - max(S - p_.Cf, 0.0)
+
+
+def an_regime_text(p_):
+    """One paragraph telling the reader which comparison is like-for-like."""
+    lab = an_eq_label(p_)
+    if float(p_.Cf) == 0.0:
+        txt = ("**Cf = 0.** The general-Cf rule collapses to b̄₁ ∈ {1, +∞}, "
+               "with boundary Ī₂(τ) = min{I₂ : E[min(K, I₂)] > g(τ)}. The "
+               "like-for-like comparison at Cf = 0 is the 2-D switching DP "
+               "(solver_cf0_2d.py) against Eq. (20)-(22) of the Cf = 0 note. "
+               "The 3-D DP of solver.py at Cf = 0 is a different model, in "
+               "which a backlog can still be cleared by a later dispatch, so "
+               "its distance from the analytic boundary is a model difference "
+               "and not an error of either.")
+    else:
+        txt = (f"**Cf = {p_.Cf:g} > 0.** Analytic = general-Cf note, {lab}"
+               + ("" if lab == "Eq. (36)" else " (Eq. (36) when π₁ = π₂)")
+               + ". It compares 'dispatch now and never again' with 'never "
+               "dispatch', both priced by Vw, so it is a one-shot rule. "
+               "Differences from the DP are the object of the comparison, "
+               "not numerical errors.")
+    if p_.pi1 < p_.pi2:
+        txt += (" Here π₁ < π₂, so the analytic threshold is a valley in τ "
+                "(Theorem 6): it is not monotone in τ.")
+    elif p_.pi1 > p_.pi2:
+        txt += " Here π₁ > π₂ (Theorem 5)."
+    if not an_terminal_zero(p_):
+        txt += (" **Terminal costs are not zero, but every analytic result "
+                "assumes V(·, 0) = 0; set c₁ = c₂ = v₂ = 0 and re-solve "
+                "before reading the differences.**")
+    return txt
+
+
+# ======================================================================
 # SESSION STATE
 # ======================================================================
 if "dp" not in st.session_state:
@@ -467,7 +698,10 @@ if solve_btn:
                 I2_max=I2_max, I2_min=I2_min, b1_max=b1_max,
             )
             dp = TransshipmentDP(p)
-            dp.solve(store_V=True, verbose=False)  # store_V=True needed for V^n queries
+            if use_fast and Chain is not None:
+                fast_solve_into(dp)                 # identical to solver.py
+            else:
+                dp.solve(store_V=True, verbose=False)  # store_V=True needed for V^n queries
             st.session_state.dp = dp
             st.session_state.dp_params = dict(
                 T=T, N=N, lam1=lam1, lam2=lam2,
@@ -509,8 +743,9 @@ def render_b1bar_surface(dp_, colorscale_):
         st.warning(
             "Figure 2 of the note assumes V(I₂, b₁, 0) = 0. Set c₁ = c₂ = v₂ = 0 "
             "in the sidebar and re-solve, otherwise the DP threshold is not "
-            "comparable with the analytic threshold of Eq. (36)."
+            f"comparable with the analytic threshold of {an_eq_label(p_)}."
         )
+    st.markdown(an_regime_text(p_))
 
     st.info(
         f"τ* = cᵤ/(h+π₁) = {tau_star:.4f}. For τ ≤ τ* the note proves "
@@ -520,7 +755,7 @@ def render_b1bar_surface(dp_, colorscale_):
 
     cA, cB, cC = st.columns(3)
     with cA:
-        show_analytic = st.checkbox("Overlay analytic b̄₁ (Eq. 36)",
+        show_analytic = st.checkbox(f"Overlay analytic b̄₁ ({an_eq_label(p_)})",
                                    value=True, key="b1bar_an")
     with cB:
         z_cap = st.slider(
@@ -606,7 +841,7 @@ def render_b1bar_surface(dp_, colorscale_):
             x=xs, y=ys, z=Z_an_plot,
             colorscale="Greys", showscale=False, opacity=0.45,
             connectgaps=False,
-            name="analytic (Eq. 36)",
+            name=f"analytic ({an_eq_label(p_)})",
             hovertemplate="I₂: %{x}<br>τ: %{y:.3f}<br>"
                           "b̄₁ (analytic): %{z:.0f}<extra></extra>",
         ))
@@ -728,20 +963,39 @@ def render_b1bar_surface(dp_, colorscale_):
                         f"max {gap.max():.0f}")
         only_one = int((fin ^ (~np.isnan(Z_an))).sum())
         msgs.append(f"cells where exactly one of the two is +∞: {only_one}")
+        an_tau_v = 0
+        for j in range(Z_an.shape[1]):
+            col = Z_an[:, j]
+            for i in range(len(ys) - 1):
+                a, b = col[i], col[i + 1]
+                if (not np.isnan(a) and not np.isnan(b) and b > a) or \
+                        (np.isnan(b) and not np.isnan(a)):
+                    an_tau_v += 1
+        msgs.append(f"analytic τ-monotonicity violations: {an_tau_v}"
+                    + (" (expected, π₁ < π₂)" if p_.pi1 < p_.pi2 else ""))
     st.caption(" · ".join(msgs))
 
     with st.expander("How to read this figure"):
         st.markdown(
-            "- The analytic threshold of Eq. (36) is **non-increasing in I₂ "
-            "and in τ**, by Theorems 3 and 4. Its surface descends from the "
-            "small-τ edge down to the floor value 1.\n"
+            "" + ("- The analytic threshold of Eq. (36) is **non-increasing in "
+               "I₂ and in τ**, by Theorems 3 and 4. Its surface descends from "
+               "the small-τ edge down to the floor value 1.\n"
+               if p_.pi1 == p_.pi2 else
+               "- The analytic threshold of Eq. (29) is non-increasing in I₂ "
+               "and in τ when π₁ > π₂ (Theorem 5).\n"
+               if p_.pi1 > p_.pi2 else
+               "- The analytic threshold of Eq. (29) is non-increasing in I₂, "
+               "but with π₁ < π₂ it is a **valley in τ** (Theorem 6): +∞ for "
+               "small τ, down to a minimum, then up again. τ-violations of the "
+               "analytic surface are therefore expected here.\n") +
             "- The **DP threshold need not be monotone**. In the Section 6.2 "
             "instance it is not: at τ ≥ 1 it reads ∞, ∞, 3, 3, 3, 4, 4, 3, 3, "
             "3 for I₂ = 1..10, so a one-unit ridge appears at I₂ = 6 and 7. "
             "That ridge is stable at N = 200 to 6400 and under four different "
             "state-space bounds, and the cost margin behind it is about −0.39, "
-            "which is far too large to be numerical. Theorems 3 and 4 apply to "
-            "the analytic bound, not to the optimal threshold.\n"
+            "which is far too large to be numerical. The monotonicity "
+            "theorems apply to the analytic one-shot rule, not to the optimal "
+            "threshold.\n"
             "- Before treating any ridge as structural, check the two "
             "diagnostics under the figure. A ridge that sits on orange tie "
             "markers, or that moves when the tie-breaking rule is switched, is "
@@ -837,8 +1091,8 @@ def compute_b1bar_tables(dp_, prefer_dispatch, n_cf0_, progress=None):
         n=nn.ravel(), tau=np.round(taus[nn.ravel() - 1], 6), I2=ii.ravel(),
         b1bar_DP=B.ravel(), DP_is_inf=np.isnan(B).ravel(),
         decided_by_tie=TIE.ravel(), dispatch_set_not_upper=HOLE.ravel(),
-        b1bar_analytic_eq36=A.ravel(), analytic_is_inf=np.isnan(A).ravel()))
-    long["DP_minus_analytic"] = long["b1bar_DP"] - long["b1bar_analytic_eq36"]
+        b1bar_analytic=A.ravel(), analytic_is_inf=np.isnan(A).ravel()))
+    long["DP_minus_analytic"] = long["b1bar_DP"] - long["b1bar_analytic"]
 
     # per-period summary
     fin = ~np.isnan(B)
@@ -853,7 +1107,7 @@ def compute_b1bar_tables(dp_, prefer_dispatch, n_cf0_, progress=None):
         min_I2_with_finite_b1bar_DP=_first_col(fin),
         min_I2_with_b1bar_eq1_DP=_first_col(B == 1),
         max_finite_b1bar_DP=np.where(fin.any(axis=1), row_max, np.nan),
-        disagreements_with_eq36=((fin != fin_A) |
+        disagreements_with_analytic=((fin != fin_A) |
                                  (fin & fin_A & (B != A))).sum(axis=1),
     ))
     if is_cf0:
@@ -874,10 +1128,14 @@ def compute_b1bar_tables(dp_, prefer_dispatch, n_cf0_, progress=None):
         cf0 = pd.DataFrame(dict(
             n=np.arange(1, N_ + 1), tau=np.round(taus, 6),
             I2bar_3D_DP_b1bar_eq1=_first_col(B == 1),
-            I2bar_eq36_strict=_first_col(A == 1),
+            I2bar_general_note_strict=_first_col(A == 1),
             I2bar_note_eq20_22=note,
             I2bar_2D_Cf0_DP=two,
         ))
+        # like-for-like: 2-D DP against its own analytic boundary;
+        # reference only: 3-D DP (a different model at Cf = 0)
+        cf0["diff_2D_DP_minus_note"] = cf0["I2bar_2D_Cf0_DP"] - note
+        cf0["diff_3D_DP_minus_note"] = cf0["I2bar_3D_DP_b1bar_eq1"] - note
 
     readme = pd.DataFrame([
         ("model", "solver.py 3-D SDP, V(I2, b1, tau)"),
@@ -894,6 +1152,12 @@ def compute_b1bar_tables(dp_, prefer_dispatch, n_cf0_, progress=None):
          else "prefer wait (solver.py default)"),
         ("definition", "b1bar = smallest b1 >= 1 at which the SDP dispatches, "
                        "scanned over the full b1 range"),
+        ("analytic", f"general-Cf note (22 July) {an_eq_label(p_)}: "
+                     "b1bar = min{b : sum_{i<b} delta(I2-i) > Cf}, delta = "
+                     "(h+pi2)/lam2 E[min(K,m)] - cu + (pi1-pi2) tau; Eq. (36) "
+                     "is the case pi1 = pi2"),
+        ("analytic assumptions", "zero terminal cost; one-shot rule priced "
+                                 "by Vw, not the optimal policy"),
         ("inf", "'inf' in the wide sheet, NaN plus DP_is_inf=True in the long "
                 "sheet, means dispatch never pays at that (I2, tau)"),
         ("dispatch_set_not_upper", "some b1 above b1bar waits; check whether "
@@ -902,8 +1166,10 @@ def compute_b1bar_tables(dp_, prefer_dispatch, n_cf0_, progress=None):
     ], columns=["item", "value"])
     if is_cf0:
         readme.loc[len(readme)] = (
-            "Cf0 sheet", "eq36 at Cf=0 uses delta > 0, eq20-22 uses M >= g; "
-                         "they differ only on exact ties")
+            "Cf0 sheet", "general rule at Cf=0 uses delta > 0, eq20-22 uses "
+                         "M >= g; they differ only on exact ties. The like-for-"
+                         "like comparison is diff_2D_DP_minus_note; the 3-D DP "
+                         "is a different model at Cf = 0")
     readme["value"] = readme["value"].astype(str)
 
     return dict(B=B, A=A, TIE=TIE, HOLE=HOLE, taus=taus, I2s=I2s,
@@ -976,7 +1242,60 @@ def _mono_bbar(D):
     return np.where(D.any(axis=1), D.argmax(axis=1) + 1.0, np.inf)
 
 
-def mono_modify_policy(p_, pol_n, mode, Vprev, I2g, b1g, sh):
+MONO_OPS = {
+    "fill":     "fill M⁻",
+    "remove":   "remove M⁺",
+    "mix":      "mixed M±",
+    "analytic": "analytic policy",
+}
+
+
+def _mono_mix_thresholds(D, Mg, bb, sojourn=1.0):
+    """
+    Mixed operator for one period. Rows are I2 = 1..K, columns b1 = 1..B.
+    D   current dispatch set, Mg = Q(wait) − best dispatch under V*,
+    bb  current threshold (inf = never).
+    Flipping a cell costs its regret |Mg|. A forced dispatch is paid once,
+    since the dispatch moves the state out of the cell. A forced wait is paid
+    in every period until the next arrival moves the state, so its one-step
+    regret, which is O(Δt), is multiplied by the expected sojourn
+    1/(1 − p0) = 1/((λ₁+λ₂)Δt); without this factor the proxy compares an
+    O(Δt) quantity with an O(1) one and always prefers removal. For a new
+    threshold b in
+    row r, the cells in [b, bb) that wait are filled, and the cells in
+    [bb, b) that dispatch are removed; cells outside that range keep their
+    action, so waits above the DP's own b̄₁ are never touched. The
+    non-increasing threshold with the smallest total regret is found by a
+    dynamic programme over I2 (isotonic regression with suffix minima).
+    Returns the new thresholds in 1..B+1, where B+1 means +infinity.
+    """
+    K, B = D.shape
+    x = np.abs(Mg)
+    x = np.where(np.isfinite(x), x, 0.0)
+    Pw = np.concatenate([np.zeros((K, 1)), np.cumsum(x * ~D, axis=1)], axis=1)
+    Pd = np.concatenate([np.zeros((K, 1)),
+                         np.cumsum(sojourn * x * D, axis=1)], axis=1)
+    bbi = np.where(np.isfinite(bb), bb, B + 1).astype(int)
+    bs = np.arange(1, B + 2)
+    C = np.empty((K, B + 1))
+    for r in range(K):
+        k0 = bbi[r] - 1
+        C[r] = np.where(bs <= bbi[r], Pw[r, k0] - Pw[r, bs - 1],
+                        Pd[r, bs - 1] - Pd[r, k0])
+        C[r] += 1e-12 * np.abs(bs - bbi[r])     # prefer no change on ties
+    F = np.empty_like(C)
+    F[0] = C[0]
+    for r in range(1, K):
+        F[r] = C[r] + np.minimum.accumulate(F[r - 1][::-1])[::-1]
+    nb = np.empty(K, int)
+    nb[K - 1] = int(np.argmin(F[K - 1])) + 1
+    for r in range(K - 2, -1, -1):
+        lo = nb[r + 1] - 1
+        nb[r] = lo + int(np.argmin(F[r][lo:])) + 1
+    return nb
+
+
+def mono_modify_policy(p_, pol_n, mode, Vprev, I2g, b1g, sh, n=None):
     """
     Apply a monotone operator to one period of the policy table.
 
@@ -986,6 +1305,11 @@ def mono_modify_policy(p_, pol_n, mode, Vprev, I2g, b1g, sh):
     remove (M+): b1bar is replaced by its running maximum from the right, so the
                  threshold becomes non-increasing in I2 from above. Every
                  dispatching cell with b1 < new threshold waits.
+    mix    (M±): per row, fill or remove, whichever flips the cheaper cells,
+                 subject to the new threshold being non-increasing in I2; see
+                 _mono_mix_thresholds.
+    analytic   : the whole I2 >= 1, b1 >= 1 block is replaced by the analytic
+                 q* of Eq. (25)-(26) at tau = n*dt (no monotonicity imposed).
 
     Returns the modified table (full grid), the mask of changed cells on the
     I2 >= 1, b1 >= 1 block, and b1bar before and after.
@@ -1004,10 +1328,26 @@ def mono_modify_policy(p_, pol_n, mode, Vprev, I2g, b1g, sh):
         if mask.any():
             bq, _ = _mono_best_dispatch(p_, Vprev, I2g, b1g, sh)
             sub[mask] = bq[r0:r1, 1:][mask]
-    else:
+    elif mode == "remove":
         env = np.maximum.accumulate(bb[::-1])[::-1]
         mask = D & (cols < env[:, None])
         sub[mask] = 0
+    elif mode == "mix":
+        w = _mono_branch(p_, Vprev, 0, I2g, b1g, sh)
+        bq, best = _mono_best_dispatch(p_, Vprev, I2g, b1g, sh)
+        Mg = (w - best)[r0:r1, 1:]
+        nb = _mono_mix_thresholds(D, Mg, bb,
+                                  sojourn=1.0 / max(1.0 - p_.p0, 1e-12))[:, None]
+        fill = (~D) & (cols >= nb) & (cols < bb[:, None])
+        rem = D & (cols < nb)
+        if fill.any():
+            sub[fill] = bq[r0:r1, 1:][fill]
+        sub[rem] = 0
+        mask = fill | rem
+    else:                                   # analytic policy, Eq. (25)-(26)
+        Aq = an_q_table(p_, n * p_.dt, p_.I2_max, p_.b1_max)
+        mask = Aq != sub
+        sub[:, :] = Aq
     return A, mask, bb, _mono_bbar(sub > 0)
 
 
@@ -1041,7 +1381,7 @@ def mono_evaluate_operator(dp_, mode, progress=None):
         pol = np.asarray(dp_.policy[n])
         A, mask, b0, b1_ = mono_modify_policy(p_, pol, mode,
                                          np.asarray(dp_.V_all[n - 1], float),
-                                         I2g, b1g, sh)
+                                         I2g, b1g, sh, n=n)
         V_dp = mono_eval_step(p_, V_dp, pol, I2g, b1g, sh)
         V_md = mono_eval_step(p_, V_md, A, I2g, b1g, sh)
         Vd[n], Vm[n] = V_dp, V_md
@@ -1123,6 +1463,9 @@ with tab_2d:
             b1_fixed = min(5, _b1_max)
         n_lines = st.slider("Number of curves", 1, 8, 3, key="nl2d")
 
+    show_an_2d = st.checkbox("Overlay analytic results", value=True,
+                             key="an2d")
+
     # plot
     if dp is None:
         st.info("👈  Set parameters and press **Solve DP** to generate plots.")
@@ -1130,6 +1473,18 @@ with tab_2d:
         fig, ax = plt.subplots(figsize=(10, 5.5))
         colours = cm.tab10(np.linspace(0, 0.9, n_lines))
         p = dp.p
+        is_cf0_p = float(p.Cf) == 0.0
+        lab_an = an_eq_label(p)
+        diff_lines = []
+
+        def _cnt_diff(a, b):
+            """Points where two curves differ; NaN (= +∞) equals NaN."""
+            a = np.asarray(a, float); b = np.asarray(b, float)
+            both_nan = np.isnan(a) & np.isnan(b)
+            same = both_nan | (np.isclose(a, b) & ~np.isnan(a) & ~np.isnan(b))
+            fin = ~np.isnan(a) & ~np.isnan(b)
+            mx = float(np.max(np.abs(a[fin] - b[fin]))) if fin.any() else 0.0
+            return int((~same).sum()), mx, int((np.isnan(a) ^ np.isnan(b)).sum())
 
         if x_choice == "τ (remaining time)":
             xs = tau_grid(p.T); xlabel = "τ (remaining time)"
@@ -1146,40 +1501,61 @@ with tab_2d:
         offset = 1.0 if retained else 0.0
 
         if is_I2bar:
-            ys_dp = []
+            b1_q = max(0, min(p.b1_max, b1_fixed))
+            ys_dp, ys_an = [], []
             for x in xs:
                 tau_q = float(x) if x_choice == "τ (remaining time)" else tau_fixed
-                I2_q  = int(x)   if x_choice == "I₂ (inventory)"     else I2_fixed
-                b1_q  = max(0, min(p.b1_max, b1_fixed))
                 n     = n_for_tau(tau_q, dp)
+                te_q  = n * p.T / p.N
                 th = None
                 for I2t in range(1, p.I2_max + 1):
                     if dp.get_policy(n, I2t, b1_q) > 0:
                         th = I2t; break
                 ys_dp.append((th - offset) if th is not None else np.nan)
+                if show_an_2d and not is_cf0_p:
+                    ys_an.append(an_I2bar_given_b1(p, b1_q, te_q) - offset)
 
             ax.plot(xs, ys_dp, color='steelblue', lw=2,
-                    label="3-D DP (I₂, b₁)")
-            if Cf == 0 and x_choice == "τ (remaining time)":
-                # DP of the note's OWN 2-D model, for a like-for-like comparison
-                # against the note's analytical staircase.
+                    label=f"3-D DP (I₂, b₁), b₁={b1_q}")
+            if ys_an:
+                ax.plot(xs, ys_an, color='crimson', lw=1.6, ls='--',
+                        label=f"analytic {lab_an}, b₁={b1_q}")
+                nd, mx, ninf = _cnt_diff(ys_dp, ys_an)
+                diff_lines.append(f"3-D DP vs analytic {lab_an}: {nd} of "
+                                  f"{len(xs)} points differ, largest finite "
+                                  f"difference {mx:.0f}, {ninf} points where "
+                                  f"exactly one is +∞")
+            if is_cf0_p and x_choice == "τ (remaining time)":
+                note_vals = np.array([_note_I2bar_exact(p, float(x))
+                                      for x in xs]) - offset
                 if show_cf0_2d:
                     try:
                         cf0_vals = solve_cf0_2d(
-                            float(p.T), int(n_cf0), float(lam1), float(lam2),
-                            float(h), float(cu), float(pi1), float(pi2),
-                            float(c2), float(v2), tuple(float(x) for x in xs),
+                            float(p.T), int(n_cf0), float(p.lam1),
+                            float(p.lam2), float(p.h), float(p.cu),
+                            float(p.pi1), float(p.pi2),
+                            float(getattr(p, "c2", 0.0)),
+                            float(getattr(p, "v2", 0.0)),
+                            tuple(float(x) for x in xs),
                         ) - offset
                         ax.plot(xs, cf0_vals, color='seagreen', lw=1.8, ls='--',
                                 label="2-D Cf=0 DP (note's model)")
+                        nd, mx, ninf = _cnt_diff(cf0_vals, note_vals)
+                        diff_lines.append(
+                            f"like-for-like, 2-D DP vs Eq. (20)-(22): {nd} of "
+                            f"{len(xs)} points differ, largest {mx:.0f}")
                     except Exception as e:
                         st.warning(f"2-D Cf=0 DP failed: {e}")
-                # Note eq. (20)-(22). Controlled by its own toggle in the
-                # "Cf = 0 model comparison" panel, controlled only by this panel.
                 if show_note_staircase:
-                    exact_vals = [an_I2bar_Cf0_exact(float(x)) - offset for x in xs]
-                    ax.plot(xs, exact_vals, color='crimson', lw=1.8,
+                    ax.plot(xs, note_vals, color='crimson', lw=1.8,
                             ls='-', alpha=0.85, label="Note staircase (eq. 20-22)")
+                nd, mx, ninf = _cnt_diff(ys_dp, note_vals)
+                diff_lines.append(
+                    f"reference only, 3-D DP vs Eq. (20)-(22): {nd} of "
+                    f"{len(xs)} points differ (different model at Cf = 0)")
+            elif is_cf0_p:
+                st.caption("At Cf = 0 the Ī₂ comparison is drawn against τ; "
+                           "choose τ on the X axis.")
 
         else:
             if x_choice == "τ (remaining time)":
@@ -1192,8 +1568,12 @@ with tab_2d:
                 vary_vals = np.linspace(1, p.I2_max, n_lines).astype(int)
                 vary_label = "I₂"
 
+            is_V = y_choice.startswith("V^n")
+            an_ok = show_an_2d and (not is_V or an_terminal_zero(p))
+            all_dp, all_an = [], []
             for vv, col in zip(vary_vals, colours):
-                ys_dp = []
+                ys_dp, ys_an = [], []
+                b1bar_cache = {}
                 for x in xs:
                     if x_choice == "τ (remaining time)":
                         tau_q = float(x); I2_q = int(vv);   b1_q = b1_fixed
@@ -1203,25 +1583,63 @@ with tab_2d:
                         tau_q = tau_fixed; I2_q = I2_fixed; b1_q = int(x)
 
                     n    = n_for_tau(tau_q, dp)
+                    te_q = n * p.T / p.N            # analytic on the same slice
                     I2_q = max(p.I2_min, min(p.I2_max, I2_q))
                     b1_q = max(0, min(p.b1_max, b1_q))
 
                     if y_choice == "q* (optimal dispatch quantity)":
                         ys_dp.append(dp.get_policy(n, I2_q, b1_q))
+                        if an_ok:
+                            ys_an.append(an_q(p, I2_q, b1_q, te_q))
                     elif y_choice == "b₁* threshold (Case 1)":
                         th = None
                         for b1t in range(1, p.b1_max + 1):  # FULL scan; capping at I2 silently hides thresholds > I2
                             if dp.get_policy(n, I2_q, b1t) > 0:
                                 th = b1t; break
                         ys_dp.append(th if th is not None else np.nan)
+                        if an_ok:
+                            if n not in b1bar_cache:
+                                b1bar_cache[n] = an_b1bar(p, te_q)
+                            ys_an.append(b1bar_cache[n][I2_q - 1]
+                                         if I2_q >= 1 else np.nan)
                     else:
                         try:
                             ys_dp.append(dp.get_value(n, I2_q, b1_q))
                         except Exception:
                             ys_dp.append(np.nan)
+                        if an_ok:
+                            ys_an.append(an_Vd(p, I2_q, b1_q, te_q))
 
                 lbl = f"{vary_label}={vv}"
                 ax.plot(xs, ys_dp, color=col, lw=2, label=f"DP  {lbl}")
+                if ys_an:
+                    ax.plot(xs, ys_an, color=col, lw=1.3, ls="--", alpha=0.8,
+                            label=(f"Vd {lbl}" if is_V
+                                   else f"analytic  {lbl}"))
+                    all_dp += list(ys_dp); all_an += list(ys_an)
+
+            if all_an:
+                a = np.asarray(all_dp, float); b = np.asarray(all_an, float)
+                if is_V:
+                    fin = np.isfinite(a) & np.isfinite(b)
+                    if fin.any():
+                        dv = b[fin] - a[fin]
+                        diff_lines.append(
+                            f"Vd − V_DP over the drawn points: min "
+                            f"{dv.min():.4f}, median {np.median(dv):.4f}, max "
+                            f"{dv.max():.4f}. Vd prices 'dispatch at most once "
+                            f"now, never again', a feasible policy, so it is an "
+                            f"upper bound on V* up to O(Δt); the gap is the value "
+                            f"of all later dispatch options.")
+                else:
+                    nd, mx, ninf = _cnt_diff(a, b)
+                    diff_lines.append(
+                        f"DP vs analytic {lab_an}: {nd} of {len(a)} points "
+                        f"differ, largest finite difference {mx:.0f}, {ninf} "
+                        f"points where exactly one is +∞")
+            elif show_an_2d and is_V and not an_terminal_zero(p):
+                diff_lines.append("Vd is not drawn: the analytic value "
+                                  "assumes c₁ = c₂ = v₂ = 0.")
 
         # Relabel when the Case-2 curve shows the retained level.
         y_label_txt = y_choice
@@ -1235,14 +1653,21 @@ with tab_2d:
             ax.invert_xaxis()
             ax.set_xlabel("τ  ←  end of horizon", fontsize=11)
 
-        title_params = (f"λ₂={lam2}, cu={cu}, h={h}, Cf={Cf}, "
-                        f"π₁={pi1}, π₂={pi2}, T={T}")
-        ax.set_title(f"{y_label_txt}  vs  {xlabel}\n{title_params}", fontsize=10)
+        title_params = (f"λ₂={p.lam2}, cu={p.cu}, h={p.h}, Cf={p.Cf}, "
+                        f"π₁={p.pi1}, π₂={p.pi2}, T={p.T}")
+        ax.set_title(f"{y_label_txt}  vs  {xlabel}\n{title_params}"
+                     + ("   (dashed = analytic)" if show_an_2d else ""),
+                     fontsize=10)
         ax.legend(fontsize=8, loc='best', framealpha=0.85)
         ax.grid(True, alpha=0.3)
 
         st.pyplot(fig)
         plt.close(fig)
+
+        if show_an_2d:
+            st.markdown(an_regime_text(p))
+            for ln in diff_lines:
+                st.caption(ln)
 
         with st.expander("Parameters used in current solve"):
             st.json(st.session_state.dp_params)
@@ -1403,11 +1828,12 @@ with tab_q:
             "nearest DP period n and the effective τ = n·Δt is reported, so "
             "you always know exactly which slice you are looking at. The DP "
             "scan covers the FULL b₁ range. Dashed lines are the analytic "
-            "threshold of Eq. (36) at the same effective τ."
+            f"threshold of {an_eq_label(p)} at the same effective τ."
         )
+        st.markdown(an_regime_text(p))
         tau_text = st.text_input("τ values", value="1.0, 2.0, 5.0",
                                  key="insp_taus")
-        show_an_i = st.checkbox("Overlay analytic Eq. (36)", value=True,
+        show_an_i = st.checkbox(f"Overlay analytic {an_eq_label(p)}", value=True,
                                 key="insp_an")
         try:
             tau_list = [float(s) for s in tau_text.replace("，", ",").split(",")
@@ -1421,6 +1847,7 @@ with tab_q:
             figq, axq = plt.subplots(figsize=(10, 5))
             cols = cm.tab10(np.linspace(0, 0.9, max(len(tau_list), 2)))
             xsI = np.arange(1, p.I2_max + 1)
+            insp_diff = []
             for tv, col in zip(tau_list, cols):
                 n = n_for_tau(float(tv), dp)
                 te = n * p.T / p.N
@@ -1428,8 +1855,15 @@ with tab_q:
                 axq.step(xsI, ys, where="mid", color=col, lw=2,
                          label=f"DP  τ={tv:g} (eff {te:.4g})")
                 if show_an_i:
-                    ya = b1bar_analytic_row(p.I2_max, te, p.lam2, p.h, p.pi1,
-                                            p.pi2, p.cu, p.Cf)
+                    ya = an_b1bar(p, te)
+                    same = (np.isnan(ys) & np.isnan(ya)) | (ys == ya)
+                    insp_diff.append(
+                        f"τ={te:.4g}: {int((~same).sum())} of {len(xsI)} I₂ "
+                        f"levels differ (DP − analytic on finite cells: "
+                        + (", ".join(f"I₂={i}: {int(d):+d}" for i, d in
+                                     list(zip(xsI[~same & ~np.isnan(ys) & ~np.isnan(ya)],
+                                              (ys - ya)[~same & ~np.isnan(ys) & ~np.isnan(ya)]))
+                                     [:8]) or "none") + ")")
                     axq.step(xsI, ya, where="mid", color=col, lw=1.4,
                              ls="--", alpha=0.7,
                              label=f"analytic τ={te:.4g}")
@@ -1439,6 +1873,8 @@ with tab_q:
                           fontsize=10)
             axq.legend(fontsize=8); axq.grid(True, alpha=0.3)
             st.pyplot(figq); plt.close(figq)
+            for ln in insp_diff:
+                st.caption(ln)
 
         st.markdown("---")
         st.subheader("Action values: dispatch vs wait at one state")
@@ -1566,26 +2002,14 @@ with tab_q:
 # SHARED HELPERS for Policy Table & Simulation
 # ======================================================================
 def _an_q_exact(I2, b1, tau):
-    """Analytic q* of Eq. (33)-(36) at exact continuous tau. 0 = wait."""
-    if I2 < 1 or b1 < 1 or tau <= 0:
+    """
+    Analytic q* of Eq. (25)-(26), evaluated on the SOLVED parameters dp.p so
+    that it always refers to the same instance as the DP. 0 = wait.
+    """
+    dp_ = st.session_state.get("dp")
+    if dp_ is None:
         return 0
-    mu = lam2 * tau
-    E = 0.0
-    pmf = math.exp(-mu)
-    cdf = pmf
-    Em = [0.0]
-    for k in range(1, I2 + 1):
-        E += 1.0 - cdf
-        Em.append(E)
-        pmf *= mu / k
-        cdf += pmf
-    d = lambda m: (h + pi2) / lam2 * Em[m] - cu + (pi1 - pi2) * tau
-    Np = sum(1 for m in range(1, I2 + 1) if d(m) > 0)
-    if Np == 0:
-        return 0
-    qc = min(b1, Np)
-    S = sum(d(I2 - i) for i in range(qc))
-    return qc if S > Cf else 0
+    return an_q(dp_.p, I2, b1, tau)
 
 
 def _q_shade(vmax):
@@ -1696,7 +2120,9 @@ with tab_pol:
                 mk = pd.DataFrame(marks, index=I2rows, columns=b1cols)
                 st.caption("cell = DP/analytic where they differ (orange); "
                            "a single number where they agree, shaded by q*. "
-                           "'·' = wait.")
+                           f"'·' = wait. Analytic = q* of Eq. (25)-(26), "
+                           f"threshold {an_eq_label(p)}.")
+                st.markdown(an_regime_text(p))
                 vmax = max((max(r) for r in qs), default=0)
                 shade = _q_shade(vmax)
                 st.dataframe(
@@ -1754,7 +2180,7 @@ with tab_sim:
         st.info("👈  Set parameters and press **Solve DP** first.")
     else:
         p = dp.p
-        IS_CF0 = (float(Cf) == 0.0)
+        IS_CF0 = (float(p.Cf) == 0.0)
         st.subheader("Sample paths under the optimal policy")
         if IS_CF0:
             st.caption(
@@ -1764,15 +2190,19 @@ with tab_sim:
                 "cost c\u1d64, or rejected and charged \u03c0\u2081\u03c4 once, "
                 "never to be served. Dispatch is therefore always one unit at "
                 "a time and the flow cost carries no \u03c0\u2081b\u2081 term. "
-                "The overlay is the analytic staircase of Eq. (20)-(22)."
+                "The overlay is the analytic staircase of Eq. (20)-(22). "
+                "All costs and rates are those of the SOLVED instance."
             )
         else:
             st.caption(
-                "Exogenous Poisson arrivals push the system along; at every "
-                "event the DP looks up the Policy Table and acts. Costs are "
-                "integrated exactly in continuous time. Tick the overlay to "
-                "run the analytic policy of Eq. (34)+(36) on the SAME "
-                "arrivals."
+                "Exogenous Poisson arrivals push the system along. Both "
+                "policies are checked at every arrival and at every period "
+                "boundary τ = n·Δt, since the threshold can fall as time "
+                "passes (π₁ < π₂) and a dispatch can then become optimal "
+                "between arrivals. Costs are integrated exactly in continuous "
+                "time with the SOLVED parameters. Tick the overlay to run the "
+                f"analytic policy of Eq. (25)-(26), threshold {an_eq_label(p)}, "
+                "on the SAME arrivals."
             )
         cs1, cs2, cs3, cs4 = st.columns(4)
         with cs1:
@@ -1806,27 +2236,14 @@ with tab_sim:
             return min(q, min(I2, b1)) if q > 0 else 0
 
         if IS_CF0:
-            dp2d = solve_cf0_2d_policy(p.T, max(int(p.N), 2000), lam1, lam2,
-                                       h, cu, pi1, pi2, 0.0, 0.0)
+            dp2d = solve_cf0_2d_policy(p.T, max(int(p.N), 2000), p.lam1,
+                                       p.lam2, p.h, p.cu, p.pi1, p.pi2,
+                                       0.0, 0.0)
 
             def _stair_thr(tau):
                 """Analytic threshold of Eq. (20)-(22) at exact tau."""
-                if tau <= 0:
-                    return np.inf
-                lvl = lam2 * (cu + (pi2 - pi1) * tau) / (h + pi2)
-                if lvl <= 0:
-                    return 1.0
-                mu = lam2 * tau
-                if lvl > mu:
-                    return np.inf
-                tot, pmf, cdf = 0.0, math.exp(-mu), math.exp(-mu)
-                for m in range(1, 400):
-                    tot += 1.0 - cdf
-                    if tot >= lvl:
-                        return float(m)
-                    pmf *= mu / m
-                    cdf += pmf
-                return np.inf
+                v = _note_I2bar_exact(p, float(tau))
+                return np.inf if np.isnan(v) else v
 
         def run_path_cf0(seed):
             """
@@ -1837,8 +2254,8 @@ with tab_sim:
             rejected Retailer-1 demands: a display quantity, not a state.
             """
             trng = np.random.default_rng(int(seed))
-            n1 = trng.poisson(lam1 * p.T)
-            n2 = trng.poisson(lam2 * p.T)
+            n1 = trng.poisson(p.lam1 * p.T)
+            n2 = trng.poisson(p.lam2 * p.T)
             ev = sorted([(t, "R1") for t in np.sort(trng.random(n1)) * p.T]
                         + [(t, "R2") for t in np.sort(trng.random(n2)) * p.T])
             pols = ["DP"] + (["AN"] if show_an else [])
@@ -1863,8 +2280,8 @@ with tab_sim:
             for te_, kind in ev:
                 for k in pols:
                     s = S[k]
-                    s["flow"] += (te_ - t) * (h * max(s["I2"], 0)
-                                              + pi2 * max(-s["I2"], 0))
+                    s["flow"] += (te_ - t) * (p.h * max(s["I2"], 0)
+                                              + p.pi2 * max(-s["I2"], 0))
                 t = te_
                 tau = p.T - t
                 pre = {k: (S[k]["I2"], S[k]["b1"]) for k in pols}
@@ -1877,15 +2294,15 @@ with tab_sim:
                     else:
                         q = serve(k, tau)
                         if q:
-                            s["disp"] += cu
+                            s["disp"] += p.cu
                             s["nCf"] += 1
                             s["I2"] -= 1
                             ships[k].append((t, 1))
                             act[k] = "serve q=1"
                         else:
-                            s["flow"] += pi1 * tau      # one-off rejection
+                            s["flow"] += p.pi1 * tau    # one-off rejection
                             s["b1"] += 1                # display only
-                            act[k] = f"reject (+{pi1 * tau:.2f})"
+                            act[k] = f"reject (+{p.pi1 * tau:.2f})"
                     traj[k].append((t, s["I2"], s["b1"]))
                 rows.append(dict(
                     t=round(t, 4), tau=round(tau, 4), ev=kind,
@@ -1893,16 +2310,20 @@ with tab_sim:
                     **{f"{k}_act": act[k] for k in pols}))
             for k in pols:
                 s = S[k]
-                s["flow"] += (p.T - t) * (h * max(s["I2"], 0)
-                                          + pi2 * max(-s["I2"], 0))
+                s["flow"] += (p.T - t) * (p.h * max(s["I2"], 0)
+                                          + p.pi2 * max(-s["I2"], 0))
             return traj, ships, rows, S
 
         def run_path(seed):
             trng = np.random.default_rng(int(seed))
-            n1 = trng.poisson(lam1 * p.T)
-            n2 = trng.poisson(lam2 * p.T)
+            n1 = trng.poisson(p.lam1 * p.T)
+            n2 = trng.poisson(p.lam2 * p.T)
+            # arrivals plus one decision check at every period boundary; the
+            # ticks do not use the random stream, so the arrivals are the
+            # same as before for a given seed
             ev = sorted([(t, "R1") for t in np.sort(trng.random(n1)) * p.T]
-                        + [(t, "R2") for t in np.sort(trng.random(n2)) * p.T])
+                        + [(t, "R2") for t in np.sort(trng.random(n2)) * p.T]
+                        + [(k * dtp, "tick") for k in range(1, int(p.N))])
             pols = {"DP": _dp_q}
             if show_an:
                 pols["AN"] = _an_q_exact
@@ -1916,7 +2337,7 @@ with tab_sim:
                 s = S[k]
                 q = pols[k](s["I2"], s["b1"], tau) if trigger_ok else 0
                 if q > 0:
-                    s["disp"] += Cf + cu * q
+                    s["disp"] += p.Cf + p.cu * q
                     s["nCf"] += 1
                     s["I2"] -= q
                     s["b1"] -= q
@@ -1937,28 +2358,35 @@ with tab_sim:
             for te_, kind in ev:
                 for k in pols:
                     s = S[k]
-                    s["flow"] += (te_ - t) * (h * max(s["I2"], 0)
-                                              + pi1 * s["b1"]
-                                              + pi2 * max(-s["I2"], 0))
+                    s["flow"] += (te_ - t) * (p.h * max(s["I2"], 0)
+                                              + p.pi1 * s["b1"]
+                                              + p.pi2 * max(-s["I2"], 0))
                 t = te_
-                for k in pols:
-                    s = S[k]
-                    if kind == "R1":
-                        s["b1"] += 1
-                    else:
-                        s["I2"] -= 1
-                    traj[k].append((t, s["I2"], s["b1"]))
+                if kind != "tick":
+                    for k in pols:
+                        s = S[k]
+                        if kind == "R1":
+                            s["b1"] += 1
+                        else:
+                            s["I2"] -= 1
+                        traj[k].append((t, s["I2"], s["b1"]))
                 tau = p.T - t
                 pre = {k: (S[k]["I2"], S[k]["b1"]) for k in pols}
                 qk = {}
                 for k in pols:
-                    # AN: only R1 arrivals can trigger (Thms 3-4, exact);
-                    # DP: any arrival can trigger (threshold not monotone)
-                    ok = (kind == "R1") if k == "AN" else True
-                    qk[k] = act(k, tau, ok)
-                    traj[k].append((t, S[k]["I2"], S[k]["b1"]))
+                    # both policies are checked at every arrival and at every
+                    # period boundary: neither threshold need be monotone in τ
+                    qk[k] = act(k, tau, True)
+                    if kind == "tick" and qk[k]:
+                        # pre-dispatch point at the same t, so the cost panel
+                        # recognises the jump as a dispatch
+                        traj[k].append((t, pre[k][0], pre[k][1]))
+                    if kind != "tick" or qk[k]:
+                        traj[k].append((t, S[k]["I2"], S[k]["b1"]))
                     if qk[k]:
                         ships[k].append((t, qk[k]))
+                if kind == "tick" and not any(qk.values()):
+                    continue
                 rows.append(dict(
                     t=round(t, 4), tau=round(tau, 4), ev=kind,
                     **{f"{k}_state": f"({pre[k][0]},{pre[k][1]})"
@@ -1967,9 +2395,9 @@ with tab_sim:
                        for k in pols}))
             for k in pols:
                 s = S[k]
-                s["flow"] += (p.T - t) * (h * max(s["I2"], 0)
-                                          + pi1 * s["b1"]
-                                          + pi2 * max(-s["I2"], 0))
+                s["flow"] += (p.T - t) * (p.h * max(s["I2"], 0)
+                                          + p.pi1 * s["b1"]
+                                          + p.pi2 * max(-s["I2"], 0))
             return traj, ships, rows, S
 
         _runner = run_path_cf0 if IS_CF0 else run_path
@@ -1982,7 +2410,7 @@ with tab_sim:
                        DP_cost=round(S["DP"]["flow"] + S["DP"]["disp"], 2),
                        DP_dispatches=S["DP"]["nCf"])
             if not IS_CF0:
-                row["DP_fixed"] = round(S["DP"]["nCf"] * Cf, 1)
+                row["DP_fixed"] = round(S["DP"]["nCf"] * p.Cf, 1)
             if show_an:
                 row.update(AN_cost=round(S["AN"]["flow"] + S["AN"]["disp"], 2),
                            AN_dispatches=S["AN"]["nCf"],
@@ -2058,15 +2486,16 @@ with tab_sim:
             for j in range(1, len(seq)):
                 tt, i2, bb = seq[j]
                 i2p, bbp = seq[j - 1][1], seq[j - 1][2]
-                flow_acc += (tt - tprev) * (h * max(i2p, 0) + pi1 * bbp
-                                            + pi2 * max(-i2p, 0))
+                flow_acc += (tt - tprev) * (p.h * max(i2p, 0) + p.pi1 * bbp
+                                            + p.pi2 * max(-i2p, 0))
                 # dispatch jump: same t, I2 decreased with b1 decreased
                 if tt == seq[j - 1][0] and i2 < i2p and bb < bbp:
-                    disp_acc += Cf + cu * (i2p - i2)
+                    disp_acc += p.Cf + p.cu * (i2p - i2)
                 tprev = tt
                 pts_t.append(tt); pts_c.append(flow_acc + disp_acc)
-            tail = (p.T - tprev) * (h * max(seq[-1][1], 0) + pi1 * seq[-1][2]
-                                    + pi2 * max(-seq[-1][1], 0))
+            tail = (p.T - tprev) * (p.h * max(seq[-1][1], 0)
+                                    + p.pi1 * seq[-1][2]
+                                    + p.pi2 * max(-seq[-1][1], 0))
             pts_t.append(p.T); pts_c.append(flow_acc + disp_acc + tail)
             axc.plot(pts_t, pts_c,
                      color="#1F618D" if k == "DP" else "#B03A2E",
@@ -2084,11 +2513,12 @@ with tab_sim:
         # ── full event table ──────────────────────────────────────
         with st.expander("Event table — every decision, including waits"):
             st.caption(
-                "One row per event. state = (I₂, b₁) after the arrival, "
-                "before the decision; the action column is the Policy-Table "
-                "lookup at that state and τ. The analytic policy is checked "
-                "only after R1 arrivals (exact by Theorems 3-4); the DP is "
-                "checked after every arrival."
+                "One row per arrival, plus one row for every period boundary "
+                "('tick') at which some policy dispatches. state = (I₂, b₁) "
+                "after the arrival, before the decision; the action column is "
+                "the Policy-Table lookup at that state and τ for the DP, and "
+                "Eq. (25)-(26) for the analytic policy. Both are checked at "
+                "every arrival and every tick."
             )
             st.dataframe(pd.DataFrame(rows), hide_index=True, height=420)
 
@@ -2105,18 +2535,20 @@ with tab_b1:
         st.subheader("SDP dispatch threshold b̄₁(I₂, τ) at every period")
         if is_cf0_b:
             st.info(
-                "Cf = 0. By Eq. (36) the analytic b̄₁ can only be 1 or +∞, so "
-                "the informative object is the boundary Ī₂(τ). The export "
-                "therefore adds a sheet comparing the 3-D SDP boundary, "
-                "Eq. (36), the note staircase of Eq. (20)-(22) and the 2-D "
-                "Cf=0 DP. The summary also counts SDP cells whose b̄₁ lies "
-                "outside {1, +∞}, which the 3-D model allows because a later "
-                "dispatch can still clear the backlog."
+                "Cf = 0. The analytic b̄₁ of the general-Cf note can only be 1 "
+                "or +∞, so the informative object is the boundary Ī₂(τ). The "
+                "export therefore adds a sheet comparing the 3-D SDP boundary, "
+                "the general rule, the note staircase of Eq. (20)-(22) and the "
+                "2-D Cf=0 DP, with the like-for-like difference 2-D DP − "
+                "Eq. (20)-(22) and the reference difference 3-D DP − "
+                "Eq. (20)-(22). The summary also counts SDP cells whose b̄₁ "
+                "lies outside {1, +∞}, which the 3-D model allows because a "
+                "later dispatch can still clear the backlog."
             )
         else:
             st.caption(
                 f"Cf = {p.Cf:g}. The table is valid for this Cf only, since "
-                "Cf enters the trigger condition of Eq. (36). Compare "
+                f"Cf enters the trigger condition of {an_eq_label(p)}. Compare "
                 "different Cf values by re-solving and exporting each one."
             )
 
@@ -2151,11 +2583,24 @@ with tab_b1:
             m2.metric("+∞ cells", int((~fin).sum()))
             m3.metric("tie-decided", int(res["TIE"].sum()))
             m4.metric("non-upper-set", int(res["HOLE"].sum()))
-            m5.metric("≠ Eq. (36)",
-                      int(res["summary"]["disagreements_with_eq36"].sum()))
+            m5.metric(f"≠ analytic {an_eq_label(p)}",
+                      int(res["summary"]["disagreements_with_analytic"].sum()))
             if res["is_cf0"]:
                 n_off = int(res["summary"]["cells_not_in_{1,inf}"].sum())
                 st.caption(f"SDP cells with b̄₁ outside {{1, +∞}}: {n_off}")
+                c0 = res["cf0"]
+                nt = c0["I2bar_note_eq20_22"].to_numpy(float)
+
+                def _ndiff(col):
+                    a = c0[col].to_numpy(float)
+                    same = (np.isnan(a) & np.isnan(nt)) | (a == nt)
+                    return int((~same).sum())
+                st.caption(
+                    f"Ī₂ like-for-like, 2-D DP vs Eq. (20)-(22): "
+                    f"{_ndiff('I2bar_2D_Cf0_DP')} of {len(c0)} periods "
+                    f"differ. Reference, 3-D DP vs Eq. (20)-(22): "
+                    f"{_ndiff('I2bar_3D_DP_b1bar_eq1')} periods differ.")
+            st.markdown(an_regime_text(p))
 
             figh, axh = plt.subplots(figsize=(11, 5))
             cmap_h = plt.get_cmap("viridis").copy()
@@ -2232,20 +2677,37 @@ with tab_mono:
             "policy's own path, of |Q(wait) − best dispatch| over the "
             "modified cells it visits."
         )
-        mode_lbl = st.radio(
-            "operator",
-            ["Fill M⁻: dispatch in the waiting gap (removes the bump)",
-             "Remove M⁺: wait below the right-running maximum"],
-            index=0, key="mono_mode")
-        mode = "fill" if mode_lbl.startswith("Fill") else "remove"
+        op_labels = {
+            "Fill M⁻: dispatch in the waiting gap (removes the bump)": "fill",
+            "Remove M⁺: wait below the right-running maximum": "remove",
+            "Mixed M±: fill or remove per row, whichever flips cheaper cells":
+                "mix",
+            f"Analytic policy: q* of Eq. (25)-(26), threshold "
+            f"{an_eq_label(p)}": "analytic",
+        }
+        mode_lbl = st.radio("operator", list(op_labels), index=0,
+                            key="mono_mode")
+        mode = op_labels[mode_lbl]
         st.caption(
             "M⁻ lowers b̄₁ at the bump to the running minimum over smaller I₂ "
             "and dispatches the best q under V* there. M⁺ raises b̄₁ below "
             "the bump to the maximum over larger I₂. Together they bracket "
-            "the optimal table from both sides. Only the I₂-direction gap is "
-            "changed: waits above the DP's own b̄₁, such as truncation holes "
-            "near b1_max, are left as they are."
+            "the optimal table from both sides. M± decides row by row: a "
+            "forced dispatch costs its regret |Q(wait) − best dispatch| under "
+            "V* once, a forced wait costs the same regret in every period "
+            "until the next arrival, and in each period the non-increasing "
+            "threshold with the smallest total regret is chosen exactly by a "
+            "dynamic programme over I₂, so a ridge is filled where filling is "
+            "cheap and removed where removing is cheap. M⁻ and M⁺ are both "
+            "candidates of that programme. For all three, only the "
+            "I₂-direction gap is changed: waits above the DP's own b̄₁, such "
+            "as truncation holes near b1_max, are left as they are. "
+            "'Analytic policy' replaces the whole table by the note's rule "
+            "and evaluates it exactly, so its gap is the exact cost of using "
+            "the analytic rule in this model."
         )
+        if mode == "analytic":
+            st.markdown(an_regime_text(p))
         mkey = (id(dp), mode)
         if st.button("Evaluate approximation", type="primary",
                      key="mono_go"):
@@ -2306,7 +2768,12 @@ with tab_mono:
             m7.metric("τ violations before → after (not enforced)",
                       f"{tv_old} → {tv_new}")
             local = not (mx_shift > 1 or lv_shift > K / 2)
-            if int(r["changed"].sum()) == 0:
+            if mode == "analytic":
+                st.info("The analytic rule replaces the optimal table "
+                        f"wherever they disagree ({int(r['changed'].sum())} "
+                        "cells over all τ). The gap below is the exact cost "
+                        "of using the note's one-shot rule in this model.")
+            elif int(r["changed"].sum()) == 0:
                 st.success("The optimal table is already monotone in I₂; "
                            "nothing was changed.")
             elif local:
@@ -2478,7 +2945,7 @@ with tab_mono:
                 index=pd.Index(rows_m, name="I2"),
                 columns=[f"b1={j}" for j in range(0, int(b1_cap) + 1)])
             info = pd.DataFrame([
-                ("operator", "M- fill" if mode == "fill" else "M+ remove"),
+                ("operator", MONO_OPS[mode]),
                 ("Cf", p.Cf), ("T", p.T), ("N", N_), ("lam1", p.lam1),
                 ("lam2", p.lam2), ("h", p.h), ("cu", p.cu), ("pi1", p.pi1),
                 ("pi2", p.pi2), ("I2_min", p.I2_min), ("I2_max", K),
@@ -2510,7 +2977,7 @@ with tab_mono:
             st.markdown("---")
             st.subheader("Conclusions")
             valid = np.isfinite(r["check"]) and r["check"] <= 1e-6
-            name = "fill M⁻" if mode == "fill" else "remove M⁺"
+            name = MONO_OPS[mode]
             lines = []
             lines.append(
                 "- **Validity:** " + (
@@ -2535,7 +3002,9 @@ with tab_mono:
                     + ("established" if viol_new == 0 else
                        f"not fully established ({viol_new} remain)")
                     + f"; τ-violations go from {tv_old} to {tv_new}. "
-                    + ("It is a local smoothing of a one-unit ridge."
+                    + ("It replaces the optimal table by the analytic rule."
+                       if mode == "analytic" else
+                       "It is a local smoothing of a one-unit ridge."
                        if local else
                        f"It moves b̄₁ at up to {lv_shift} I₂ levels by up "
                        f"to {mx_shift:.0f} units, so it is a structural "
@@ -2554,25 +3023,31 @@ with tab_mono:
                     f"({relT:.3f}%); over all τ the largest loss in the "
                     f"region is {max_gap_tau.max():.4f} at "
                     f"τ = {taus_m[int(np.argmax(max_gap_tau))]:.3f}.")
-            other = "remove" if mode == "fill" else "fill"
-            ro = store.get((id(dp), other))
-            if ro is not None and valid:
-                g_this = g_state[-1]
-                g_other = float(ro["Vm"][N_, ii, bb] - ro["Vd"][N_, ii, bb])
-                oname = "fill M⁻" if other == "fill" else "remove M⁺"
-                if abs(g_this - g_other) <= 1e-6:
-                    lines.append("- **Comparison:** both operators cost the "
-                                 "same at this state.")
-                else:
-                    better, worse = ((name, oname) if g_this < g_other
-                                     else (oname, name))
-                    lines.append(
-                        f"- **Comparison:** at ({int(I2s0)}, {int(b1s0)}) "
-                        f"{better} loses {min(g_this, g_other):.4f} and "
-                        f"{worse} loses {max(g_this, g_other):.4f}, so "
-                        f"{better} is the better monotone approximation of "
-                        f"the two for this instance.")
-            elif ro is None:
-                lines.append(f"- **Comparison:** evaluate {'remove M⁺' if other == 'remove' else 'fill M⁻'} "
-                             f"as well to compare the two operators.")
+            done = [(m, store[(id(dp), m)]) for m in MONO_OPS
+                    if (id(dp), m) in store]
+            if len(done) >= 2 and valid:
+                comp = []
+                for m, ro in done:
+                    gT = float(ro["Vm"][N_, ii, bb] - ro["Vd"][N_, ii, bb])
+                    regT_m = (ro["Vm"] - ro["Vd"])[N_, r0:, :int(b1_cap) + 1]
+                    comp.append(dict(
+                        operator=MONO_OPS[m],
+                        modified_cells=int(ro["changed"].sum()),
+                        gap_at_state=round(gT, 6),
+                        rel_gap_pct=round(100 * gT / abs(v_state[-1]), 4)
+                        if abs(v_state[-1]) > 1e-9 else np.nan,
+                        worst_gap_tau_T=round(float(regT_m.max()), 6)))
+                comp_df = pd.DataFrame(comp).sort_values("gap_at_state")
+                order = ", ".join(f"{c['operator']} {c['gap_at_state']:.4f}"
+                                  for c in comp_df.to_dict("records"))
+                lines.append(
+                    f"- **Comparison at ({int(I2s0)}, {int(b1s0)}), τ = T:** "
+                    f"{order} (smallest loss first). "
+                    f"{comp_df.iloc[0]['operator']} is the cheapest of the "
+                    f"evaluated operators for this instance.")
+            else:
+                lines.append("- **Comparison:** evaluate further operators "
+                             "to compare them here.")
             st.markdown("\n".join(lines))
+            if len(done) >= 2 and valid:
+                st.dataframe(comp_df, hide_index=True)
