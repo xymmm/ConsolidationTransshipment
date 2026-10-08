@@ -117,12 +117,18 @@ CHANGE LOG (analytic comparisons, meeting of 18 September)
     when the box is unticked or transship_core.py is absent.
 22. New tab "Fixed K". From one start state it compares, exactly on the same
     chain: the closed-loop policy with at most K dispatches whose times and
-    quantities are set by the model (k_dispatch_solver.py); scheduled
+    quantities are set by the model; scheduled
     dispatch times fixed at the stockout, SP(K), whose K = 1 case is the
     Zhou and Wang (2023) analogue; the same with the T-policy quantity rule,
     SPc(K); and the best uniform T-policy. It also shows when the
     dispatches happen and how large they are, and the threshold of every
     layer k next to the note's one-shot rule.
+23. Fixed K tab: solved by fixed_k.py, which replaces k_dispatch_solver.py
+    and reuses transship_core.Chain. New option "must use exactly K", on by
+    default after the meeting of 8 October; unused dispatches are charged
+    Cf + 1e6, so the policy is independent of Cf and the table reports
+    P(fewer than K). Untick it for the earlier "at most K". The per-layer
+    structure table is no longer shown.
 """
 
 import io
@@ -141,10 +147,10 @@ try:
 except ImportError:                        # fall back to solver.py alone
     Chain = None
 try:
-    from k_dispatch_solver import KDispatchDP
+    from fixed_k import FixedK
     from scheduled_policy import ScheduledPolicy
 except ImportError:                        # the Fixed K tab is then disabled
-    KDispatchDP = ScheduledPolicy = None
+    FixedK = ScheduledPolicy = None
 
 
 def fast_solve_into(dp_):
@@ -3073,8 +3079,8 @@ with tab_mono:
 with tab_k:
     if dp is None:
         st.info("👈  Set parameters and press **Solve DP** first.")
-    elif KDispatchDP is None or ScheduledPolicy is None:
-        st.error("This tab needs k_dispatch_solver.py, scheduled_policy.py and "
+    elif FixedK is None or ScheduledPolicy is None:
+        st.error("This tab needs fixed_k.py, scheduled_policy.py and "
                  "transship_core.py in the same folder as app.py.")
     else:
         p = dp.p
@@ -3082,9 +3088,11 @@ with tab_k:
         st.markdown(
             "All costs are exact expected costs from the chosen start state at "
             "τ = T on the same chain as the DP, so they are directly comparable.\n\n"
-            "- **Fixed K (closed loop)**: at most K dispatches; the time and the "
-            "quantity of every dispatch are decided by the model from the "
-            "realised state. Solved by k_dispatch_solver.py.\n"
+            "- **Fixed K (closed loop)**: exactly K dispatches, or at most K "
+            "if the box below is unticked; the time and the quantity of every "
+            "dispatch are decided by the model from the realised state. With "
+            "exactly K the fixed cost is paid K times on every path, so the "
+            "policy does not depend on Cf. Solved by fixed_k.py.\n"
             "- **Scheduled SP(K)**: K dispatch times are chosen once, at the "
             "stockout, and then kept; at each time the quantity is chosen from "
             "the observed state and may be zero. **SP(1) is the analogue of "
@@ -3111,6 +3119,8 @@ with tab_k:
             b1s_k = st.number_input("start b₁", min_value=0,
                                     max_value=int(p.b1_max), value=0,
                                     key="fk_b1")
+        exact_k = st.checkbox("must use exactly K dispatches", value=True,
+                              key="fk_exact")
         k4, k5, k6 = st.columns(3)
         with k4:
             spK_k = st.select_slider("largest K for scheduled SP",
@@ -3128,19 +3138,20 @@ with tab_k:
                    "coarser search grid is faster; the result is then refined "
                    "on the full grid.")
         fk_key = (id(dp), int(Kmax_k), int(I2s_k), int(b1s_k), int(spK_k),
-                  bool(spc_k), int(step_k))
+                  bool(spc_k), int(step_k), bool(exact_k))
         if st.button("Compute fixed-K comparison", type="primary", key="fk_go"):
             bar = st.progress(0.0, text="fixed-K layers")
-            kd = KDispatchDP(p, int(Kmax_k)).solve()
+            ch_k = Chain(p)
+            kd = FixedK(p, int(Kmax_k), exact=bool(exact_k), chain=ch_k).solve()
             vstar = float(dp.get_value(p.N, int(I2s_k), int(b1s_k)))
-            laws = {K: kd.path_law(K, int(I2s_k), int(b1s_k))
+            laws = {K: kd.law(K, int(I2s_k), int(b1s_k))
                     for K in range(1, int(Kmax_k) + 1)}
-            bar.progress(0.25, text="structure of each layer")
-            struct = kd.structure_report() if Kmax_k >= 1 else []
+            bar.progress(0.25, text="threshold of each layer")
             tabs_k = {k: kd.threshold_table(k) for k in range(1, int(Kmax_k) + 1)}
             tabs_k["myopic"] = kd.threshold_table(1, kd.myopic_table())
-            dv, vks = kd.marginal_values(int(I2s_k), int(b1s_k))
-            ch_k = Chain(p)
+            vks = [kd.law(0, int(I2s_k), int(b1s_k))["cost"]] + \
+                  [laws[K]["cost"] for K in range(1, int(Kmax_k) + 1)]
+            dv = [vks[K - 1] - vks[K] for K in range(1, len(vks))]
             sp_res = {}
             rules = ["optimal"] + (["clear"] if spc_k else [])
             jobs = [(r_, K) for r_ in rules for K in range(1, int(spK_k) + 1)]
@@ -3161,7 +3172,7 @@ with tab_k:
                     tp_best = (c_, float(D))
             bar.empty()
             st.session_state.fk_res = (fk_key, dict(
-                vstar=vstar, vks=vks, dv=dv, laws=laws, struct=struct,
+                vstar=vstar, vks=vks, dv=dv, laws=laws,
                 tabs=tabs_k, sp=sp_res, tp=tp_best, t_grid=laws[1]["t_grid"]
                 if laws else None))
 
@@ -3171,7 +3182,8 @@ with tab_k:
         else:
             R = cached_k[1]
             vstar = R["vstar"]
-            pct = lambda v: 100.0 * (v - vstar) / abs(vstar)
+            pct = lambda v: (100.0 * (v - vstar) / abs(vstar)
+                             if vstar != 0 else float("nan"))
 
             # ── A. cost against K ──────────────────────────────────
             st.markdown("#### A. Cost against the number of dispatches")
@@ -3189,6 +3201,7 @@ with tab_k:
                     row["fixed K, closed loop"] = round(R["vks"][K], 4)
                     row["% vs V*"] = round(pct(R["vks"][K]), 3)
                     row["value of K-th dispatch"] = round(R["dv"][K - 1], 4)
+                    row["P(fewer than K)"] = float(f"{R['laws'][K]['p_fewer']:.2e}")
                 if ("optimal", K) in R["sp"]:
                     s_ = R["sp"][("optimal", K)]
                     row["scheduled SP(K)"] = round(s_["cost"], 4)
@@ -3298,8 +3311,6 @@ with tab_k:
             axC[0].set_ylabel("τ")
             figC.colorbar(im_, ax=list(axC), label="b̄₁")
             st.pyplot(figC); plt.close(figC)
-            if R["struct"]:
-                st.dataframe(pd.DataFrame(R["struct"]).round(4), hide_index=True)
             f_ = lambda A: np.where(np.isfinite(A), A, np.inf)
             Lk = [k for k in lay if k != "myopic"]
             if Lk:
@@ -3311,5 +3322,5 @@ with tab_k:
                     f"b̄₁(k=1): {(LK_ <= L1_).mean():.4f}. The note rule is the "
                     "layer k = 1 with waiting priced as 'never dispatch'; the "
                     "exact layer k = 1 keeps the option of one later dispatch. "
-                    "share_b1bar_next_le_this = 1 means one more allowed "
+                    "A share of 1 in the second figure means one more "
                     "dispatch never delays a dispatch anywhere.")

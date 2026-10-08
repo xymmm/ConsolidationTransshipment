@@ -15,7 +15,6 @@ t = T - n*dt.  The start of the horizon is n = N.
 
 Contents
     Chain                      grids, one-step operators, exact DP
-    Chain.solve_k_limited      closed-loop optimum with at most k dispatches
     Chain.solve_schedule       open-loop epochs, state-dependent quantity
     Chain.forward              exact distribution of the number of
                                dispatches and expected cost of any table
@@ -137,35 +136,6 @@ class Chain:
             V = self.Q(0, V)
             V_all[n] = V
         return V_all
-
-    # ── closed loop, at most k dispatches ────────────────────────────
-    def solve_k_limited(self, kmax, verbose=False):
-        """
-        V^(k)_n = min{ Q_0(V^(k)_{n-1}),  min_{q>=1} Q_q(V^(k-1)_{n-1}) },
-        V^(0) = never dispatch.  Returns lists Vk[k] (all n) and polk[k].
-        V^(k) is non-increasing in k and equals the exact DP once k is large
-        enough; at the start state it settles within very few k when Cf > 0.
-        """
-        N = self.p.N
-        prev = self.solve_wait_only()
-        Vk, polk = [prev], [np.zeros((N + 1,) + self.shape, np.int16)]
-        for k in range(1, kmax + 1):
-            V = self.terminal()
-            V_all = np.empty((N + 1,) + self.shape)
-            pol = np.zeros((N + 1,) + self.shape, np.int16)
-            V_all[0] = V
-            for n in range(1, N + 1):
-                w = self.Q(0, V)
-                d, bq = self.best_dispatch(prev[n - 1])
-                disp = d < w
-                V = np.where(disp, d, w)
-                pol[n] = np.where(disp, bq, 0)
-                V_all[n] = V
-            Vk.append(V_all); polk.append(pol)
-            prev = V_all
-            if verbose:
-                print(f"  k = {k} done")
-        return Vk, polk
 
     # ── open loop epochs ─────────────────────────────────────────────
     def n_of_time(self, t):

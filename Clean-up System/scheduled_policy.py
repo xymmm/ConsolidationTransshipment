@@ -66,6 +66,7 @@ import time
 import numpy as np
 from solver import Params
 from transship_core import Chain, warn_if_cf0, _dot
+from fixed_k import FixedK
 
 
 class ScheduledPolicy:
@@ -228,7 +229,7 @@ def compare(p: Params, I2_0, b1_0=0, Kmax=3, step=4, verbose=True):
     ch = Chain(p)
     i0 = int(I2_0 - p.I2_min)
     V, polstar = ch.solve()
-    Vk, _ = ch.solve_k_limited(Kmax)
+    Vk = FixedK(p, Kmax, exact=False, chain=ch).solve().V   # at most K, as SP(K)
     vstar = float(V[p.N, i0, b1_0])
     sp = ScheduledPolicy(p, "optimal", ch)
     spc = ScheduledPolicy(p, "clear", ch)
